@@ -1,0 +1,22 @@
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.so
+*.dylib
+*.dll
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Generated outputs
+results/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
