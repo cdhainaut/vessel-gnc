@@ -35,6 +35,8 @@ SENSORS = SensorConfig()  # default rates: GNSS 5 Hz, compass/speed/gyro 10 Hz
 
 def main() -> None:
     path = make_s_curve_path()
+    # Model mismatch: truth plant, nominal filter (portfolio plan Phase C).
+    plant_params = _core.truth_params()
     params = _core.default_params()
     environment = _core.Environment(current_east=CURRENT_EAST, wind_east=WIND_EAST)
     rng = np.random.default_rng(SEED)
@@ -85,7 +87,7 @@ def main() -> None:
     result = simulate(
         DURATION,
         DT,
-        params=params,
+        params=plant_params,
         control=policy,
         environment=environment,
         control_period=CONTROL_PERIOD,

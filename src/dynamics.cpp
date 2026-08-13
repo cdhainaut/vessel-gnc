@@ -82,4 +82,24 @@ ModelParams default_params() {
     return ModelParams{};
 }
 
+ModelParams truth_params() {
+    // Plant parameters for the mismatch scenario: +10 % mass, +15 % inertia,
+    // +10 % added mass, -15 % surge drag, -20 % sway damping, -15 % yaw
+    // damping. The vessel stays directionally stable at cruise (yaw damping
+    // still exceeds the Munk coupling); see docs/model.md §6.
+    ModelParams params = default_params();
+    params.mass *= 1.10;
+    params.inertia_z *= 1.15;
+    params.added_mass_x *= 1.10;
+    params.added_mass_y *= 1.10;
+    params.added_inertia_z *= 1.15;
+    params.lin_damping_u *= 0.85;
+    params.lin_damping_v *= 0.80;
+    params.lin_damping_r *= 0.85;
+    params.quad_damping_u *= 0.90;
+    params.quad_damping_v *= 0.85;
+    params.quad_damping_r *= 0.80;
+    return params;
+}
+
 }  // namespace vessel_gnc

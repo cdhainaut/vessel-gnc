@@ -36,7 +36,9 @@ METRICS_OUTPUT = Path("results/path_following_metrics.json")
 
 def main() -> None:
     path = make_s_curve_path()
-    params = _core.default_params()
+    # Model mismatch: the plant runs the perturbed truth parameters while the
+    # controllers use the nominal set (portfolio plan Phase C).
+    plant_params = _core.truth_params()
     environment = _core.Environment(current_east=CURRENT_EAST, wind_east=WIND_EAST)
     heading = _core.HeadingController(_core.default_heading_gains())
     speed = _core.SpeedController(_core.default_speed_gains())
@@ -50,7 +52,7 @@ def main() -> None:
     result = simulate(
         DURATION,
         DT,
-        params=params,
+        params=plant_params,
         control=policy,
         environment=environment,
         control_period=CONTROL_PERIOD,

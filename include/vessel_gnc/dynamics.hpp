@@ -26,4 +26,10 @@ Control clamp_control(const Control& control, const ModelParams& params);
 // Illustrative small-USV parameter set (docs/model.md §6).
 ModelParams default_params();
 
+// Perturbed plant parameters for the model-mismatch scenario (portfolio plan
+// Phase C, docs/model.md §6): the controller/filter/NMPC keep
+// `default_params()`, the plant uses this set. Multipliers are documented
+// and the set keeps the vessel directionally stable at cruise.
+ModelParams truth_params();
+
 }  // namespace vessel_gnc
