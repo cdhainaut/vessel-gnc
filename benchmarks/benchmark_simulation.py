@@ -48,14 +48,16 @@ def bench_nmpc() -> tuple[float, float]:
     path = make_s_curve_path()
     nmpc = VesselNmpc(_core.default_params())
     prev = _core.Control()
+    actuator = _core.ActuatorState()
     times = []
 
     def policy(t: float, state: _core.State) -> _core.Control:
-        nonlocal prev
+        nonlocal prev, actuator
+        actuator = _core.actuator_step(actuator, prev, _core.default_params(), 0.2)
         refs, psi_refs = path_reference(
             path, 1.3 * t, 1.3, nmpc.config.dt, nmpc.config.horizon
         )
-        cmd = nmpc.solve(state, refs, psi_refs, prev)
+        cmd = nmpc.solve(state, actuator, refs, psi_refs, prev)
         times.append(nmpc.last_solve_time)
         prev = _core.clamp_control(cmd, _core.default_params())
         return prev
