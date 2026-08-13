@@ -35,6 +35,7 @@ set(BUILD_TESTING ${_vessel_gnc_build_testing} CACHE BOOL "" FORCE)
 
 # --- Core library --------------------------------------------------------------
 add_library(vessel_gnc STATIC
+    src/actuator.cpp
     src/controllers.cpp
     src/dynamics.cpp
     src/integrator.cpp
@@ -66,10 +67,14 @@ if(BUILD_TESTING)
     add_executable(test_controllers tests/test_controllers.cpp)
     target_link_libraries(test_controllers PRIVATE vessel_gnc GTest::gtest_main)
 
+    add_executable(test_actuator tests/test_actuator.cpp)
+    target_link_libraries(test_actuator PRIVATE vessel_gnc GTest::gtest_main)
+
     include(GoogleTest)
     gtest_discover_tests(test_dynamics)
     gtest_discover_tests(test_integrator)
     gtest_discover_tests(test_controllers)
+    gtest_discover_tests(test_actuator)
 endif()
 
 option(VESSEL_GNC_BUILD_BENCHMARKS "Build the C++ micro-benchmark" OFF)

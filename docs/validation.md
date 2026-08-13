@@ -50,7 +50,7 @@ Status legend:
 
 | Case | Status | Location |
 |---|---|---|
-| CasADi model vs C++ RK4 kernel (cross-validation of the duplication) | verified | `tests/test_nmpc.py` |
+| CasADi 8-state model vs C++ (actuator + vessel, cross-validation of the duplication) | verified | `tests/test_nmpc.py` |
 | Actuator bounds respected, straight-line tracking | verified | `tests/test_nmpc.py` |
 | S-curve regression with unknown current/wind | validated | `tests/test_nmpc.py` |
 | Solve-time budget, determinism, warm-start shift | verified | `tests/test_nmpc.py` |

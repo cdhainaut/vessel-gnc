@@ -97,15 +97,25 @@ force is defined in the inertial frame and rotated into the body frame.
 
 ## 5. Actuator model
 
-Actuators are ideal force sources:
+Actuators are **not** ideal force sources: the commanded forces go through a
+first-order response lag with a smooth rate limit and saturation. The two
+channels are decoupled:
 
 ```text
-T_min <= T <= T_max      N_min <= N <= N_max
+dT/dt = T_dot_max tanh((T_cmd - T) / (tau_T T_dot_max))
+dN/dt = N_dot_max tanh((N_cmd - N) / (tau_N N_dot_max))
 ```
 
-No rate limits and no propeller/rudder dynamics yet (planned).
-`clamp_control()` enforces the saturation bounds; the Python simulation loop
-clamps every control command by default.
+with the state projected into `[T_min, T_max] x [N_min, N_max]` after each
+step and the command clamped to the same bounds. The tanh keeps
+`|dT/dt| <= T_dot_max` strictly and makes the response C1 (fast convergence
+of the NMPC solver); the small-signal behaviour is the plain first-order
+lag, full-scale steps are rate-limited ramps.
+
+Parameters (illustrative): `tau_T = 1.0 s`, `tau_N = 0.6 s`,
+`T_dot_max = 50 N/s`, `N_dot_max = 8 N m/s`. `clamp_control()` enforces the
+command bounds; the simulation loop propagates the actuator state
+(`actuator_step`) and applies its output to the vessel.
 
 ## 6. Parameters (illustrative)
 
@@ -127,6 +137,8 @@ small ~1.5 m, 30 kg USV:
 | `N_|r|r` | 60 | N m s²/rad² | quadratic yaw damping |
 | `T_min`, `T_max` | −20, 60 | N | thrust saturation |
 | `N_min`, `N_max` | −6, 6 | N m | moment saturation |
+| `tau_T`, `tau_N` | 1.0, 0.6 | s | actuator response lag |
+| `T_dot_max`, `N_dot_max` | 50, 8 | N/s, N m/s | actuator rate limits |
 
 Consequences (used by the validation tests):
 
@@ -150,7 +162,7 @@ order 10–20 m).
 | Diagonal added mass | Standard for symmetric hulls | Manoeuvring studies | No cross-coupling (`Y_rdot`, `N_vdot`) |
 | Diagonal linear + quadratic damping | Standard surge/sway/yaw representation | Moderate speeds and drift angles | No damping cross-terms |
 | Constant inertial wind force, no wind moment | Current simplification | Weak-to-moderate wind | No apparent-wind model, no wind moment |
-| Ideal actuators with saturation | Current simplification | Low-frequency control studies | No rate limits, no propeller/rudder dynamics |
+| First-order actuator with rate limits | Credible lag/saturation/rate behaviour | Low-frequency control studies | No propeller/rudder detail; illustrative time constants |
 | Zero-order hold control per RK4 step | Standard sampled control | `dt` small relative to dynamics | Inter-sample behaviour not modelled |
 | Illustrative parameters | No vessel data available | Order-of-magnitude behaviour only | Not valid for a specific craft |
 

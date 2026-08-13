@@ -15,10 +15,20 @@ struct State {
     double r = 0.0;    // [rad/s] yaw rate (body z, clockwise positive)
 };
 
-// Actuator command: ideal surge force and yaw moment (docs/model.md §5).
+// Actuator command: desired surge force and yaw moment (docs/model.md §5).
+// The plant does not apply commands instantly: it goes through the actuator
+// dynamics (ActuatorState / actuator_step).
 struct Control {
     double thrust = 0.0;      // [N]   surge force, positive forward
     double yaw_moment = 0.0;  // [N m] yaw moment, clockwise positive
+};
+
+// Actuator state: the forces actually applied to the vessel, after the
+// first-order response lag, rate limiting and saturation of the command
+// (docs/model.md §5).
+struct ActuatorState {
+    double thrust = 0.0;      // [N]
+    double yaw_moment = 0.0;  // [N m]
 };
 
 // Ambient disturbances, both expressed in the inertial (NED) frame.
@@ -52,6 +62,14 @@ struct ModelParams {
     double thrust_max = 60.0;   // [N]
     double moment_min = -6.0;   // [N m]
     double moment_max = 6.0;    // [N m]
+    // Actuator dynamics (illustrative first-order response with rate limits,
+    // see docs/model.md §5). The time constants are slow enough to remain
+    // well resolved by the NMPC model step (0.4 s) and the rate limits bind
+    // for full-scale commands.
+    double thrust_time_constant = 1.0;  // [s]
+    double moment_time_constant = 0.6;  // [s]
+    double thrust_rate_limit = 50.0;    // [N/s]
+    double moment_rate_limit = 8.0;     // [N m/s]
 };
 
 }  // namespace vessel_gnc

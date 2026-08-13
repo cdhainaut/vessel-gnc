@@ -4,6 +4,7 @@
 #include <pybind11/eigen.h>
 #include <pybind11/pybind11.h>
 
+#include "vessel_gnc/actuator.hpp"
 #include "vessel_gnc/controllers.hpp"
 #include "vessel_gnc/dynamics.hpp"
 #include "vessel_gnc/integrator.hpp"
@@ -77,7 +78,9 @@ PYBIND11_MODULE(_core, m) {
                          double lin_damping_u, double lin_damping_v, double lin_damping_r,
                          double quad_damping_u, double quad_damping_v, double quad_damping_r,
                          double thrust_min, double thrust_max,
-                         double moment_min, double moment_max) {
+                         double moment_min, double moment_max,
+                         double thrust_time_constant, double moment_time_constant,
+                         double thrust_rate_limit, double moment_rate_limit) {
             ModelParams p;
             p.mass = mass;
             p.inertia_z = inertia_z;
@@ -94,6 +97,10 @@ PYBIND11_MODULE(_core, m) {
             p.thrust_max = thrust_max;
             p.moment_min = moment_min;
             p.moment_max = moment_max;
+            p.thrust_time_constant = thrust_time_constant;
+            p.moment_time_constant = moment_time_constant;
+            p.thrust_rate_limit = thrust_rate_limit;
+            p.moment_rate_limit = moment_rate_limit;
             return p;
         }),
              py::arg("mass") = 30.0, py::arg("inertia_z") = 4.0,
@@ -104,7 +111,11 @@ PYBIND11_MODULE(_core, m) {
              py::arg("quad_damping_u") = 20.0, py::arg("quad_damping_v") = 250.0,
              py::arg("quad_damping_r") = 60.0,
              py::arg("thrust_min") = -20.0, py::arg("thrust_max") = 60.0,
-             py::arg("moment_min") = -6.0, py::arg("moment_max") = 6.0)
+             py::arg("moment_min") = -6.0, py::arg("moment_max") = 6.0,
+             py::arg("thrust_time_constant") = 1.0,
+             py::arg("moment_time_constant") = 0.6,
+             py::arg("thrust_rate_limit") = 50.0,
+             py::arg("moment_rate_limit") = 8.0)
         .def_readwrite("mass", &ModelParams::mass)
         .def_readwrite("inertia_z", &ModelParams::inertia_z)
         .def_readwrite("added_mass_x", &ModelParams::added_mass_x)
@@ -119,7 +130,11 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("thrust_min", &ModelParams::thrust_min)
         .def_readwrite("thrust_max", &ModelParams::thrust_max)
         .def_readwrite("moment_min", &ModelParams::moment_min)
-        .def_readwrite("moment_max", &ModelParams::moment_max);
+        .def_readwrite("moment_max", &ModelParams::moment_max)
+        .def_readwrite("thrust_time_constant", &ModelParams::thrust_time_constant)
+        .def_readwrite("moment_time_constant", &ModelParams::moment_time_constant)
+        .def_readwrite("thrust_rate_limit", &ModelParams::thrust_rate_limit)
+        .def_readwrite("moment_rate_limit", &ModelParams::moment_rate_limit);
 
     m.def("default_params", &default_params, "Illustrative small-USV parameter set.");
     m.def("rotation_matrix", &rotation_matrix, py::arg("psi"),
@@ -132,6 +147,24 @@ PYBIND11_MODULE(_core, m) {
           "One fixed-step RK4 integration step (zero-order hold on control).");
     m.def("clamp_control", &clamp_control, py::arg("control"), py::arg("params"),
           "Clamp a control command to the actuator saturation bounds.");
+
+    py::class_<ActuatorState>(m, "ActuatorState")
+        .def(py::init([](double thrust, double yaw_moment) {
+            return ActuatorState{thrust, yaw_moment};
+        }),
+             py::arg("thrust") = 0.0, py::arg("yaw_moment") = 0.0)
+        .def_readwrite("thrust", &ActuatorState::thrust)
+        .def_readwrite("yaw_moment", &ActuatorState::yaw_moment)
+        .def("__repr__", [](const ActuatorState& a) {
+            return std::format("ActuatorState(thrust={:.3f}, yaw_moment={:.3f})",
+                               a.thrust, a.yaw_moment);
+        });
+
+    m.def("actuator_step", &actuator_step, py::arg("actuator"), py::arg("command"),
+          py::arg("params"), py::arg("dt"),
+          "One RK4 step of the rate-limited first-order actuator response.");
+    m.def("truth_params", &truth_params,
+          "Perturbed plant parameters for the model-mismatch scenario.");
 
     py::class_<PidGains>(m, "PidGains")
         .def(py::init([](double kp, double ki, double kd) {

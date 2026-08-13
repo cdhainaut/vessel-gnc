@@ -33,8 +33,8 @@ class SimulationResult:
     u: np.ndarray  # [m/s]
     v: np.ndarray  # [m/s]
     r: np.ndarray  # [rad/s]
-    thrust: np.ndarray  # [N]
-    yaw_moment: np.ndarray  # [N m]
+    thrust: np.ndarray  # [N]     applied thrust (post-actuator)
+    yaw_moment: np.ndarray  # [N m]  applied yaw moment (post-actuator)
 
     @property
     def n_steps(self) -> int:
@@ -121,6 +121,7 @@ def simulate(
     r = np.empty(n_samples)
     thrust = np.empty(n_samples)
     yaw_moment = np.empty(n_samples)
+    actuator = _core.ActuatorState()
 
     for k in range(n_steps):
         if is_policy:
@@ -131,15 +132,19 @@ def simulate(
             cmd = control
         if clamp:
             cmd = _core.clamp_control(cmd, params)
+        # The plant applies the actuator output (lag, rate limit, saturation),
+        # not the raw command (docs/model.md §5).
+        actuator = _core.actuator_step(actuator, cmd, params, dt)
+        applied = _core.Control(thrust=actuator.thrust, yaw_moment=actuator.yaw_moment)
         x[k] = state.x
         y[k] = state.y
         psi[k] = state.psi
         u[k] = state.u
         v[k] = state.v
         r[k] = state.r
-        thrust[k] = cmd.thrust
-        yaw_moment[k] = cmd.yaw_moment
-        state = _core.rk4_step(state, cmd, environment, params, dt)
+        thrust[k] = applied.thrust
+        yaw_moment[k] = applied.yaw_moment
+        state = _core.rk4_step(state, applied, environment, params, dt)
 
     x[n_steps] = state.x
     y[n_steps] = state.y
