@@ -1,6 +1,6 @@
 # Vessel model — 3-DOF horizontal plane
 
-Status: **v0.1**. The implementation is verified (unit and convergence tests in
+The implementation is numerically verified (unit and convergence tests in
 `tests/`); the parameter values are **illustrative** (order-of-magnitude for a
 small ~1.5 m, 30 kg USV), not identified from a specific hull. Everything in
 this document uses SI units and radians.
@@ -93,19 +93,19 @@ force is defined in the inertial frame and rotated into the body frame.
   is dragged along with it; a vessel moving exactly with the current feels no
   hydrodynamic force. (Both are validated in `tests/`.)
 - **Wind** — constant force in the inertial frame, applied at the hull centre.
-  Wind-induced yaw moment is neglected in v0.1.
+  Wind-induced yaw moment is neglected in the current model.
 
 ## 5. Actuator model
 
-v0.1 actuators are ideal force sources:
+Actuators are ideal force sources:
 
 ```text
 T_min <= T <= T_max      N_min <= N <= N_max
 ```
 
-No rate limits and no propeller/rudder dynamics in v0.1 (planned for a later
-milestone). `clamp_control()` enforces the saturation bounds; the Python
-simulation loop clamps every control command by default.
+No rate limits and no propeller/rudder dynamics yet (planned).
+`clamp_control()` enforces the saturation bounds; the Python simulation loop
+clamps every control command by default.
 
 ## 6. Parameters (illustrative)
 
@@ -142,19 +142,19 @@ physical fidelity claim is made for a specific craft. They are chosen to give a
 small USV plausible manoeuvring behaviour (speeds of 1–2 m/s, turning radii of
 order 10–20 m).
 
-## 7. Approximations and limitations (v0.1)
+## 7. Approximations and limitations
 
 | Approximation | Why | Expected validity | Limitation |
 |---|---|---|---|
 | 3-DOF horizontal plane | Scope of v1 (plan §3) | Quasi-horizontal motions, calm water, low Froude number | No heave/roll/pitch, no wave forces |
 | Diagonal added mass | Standard for symmetric hulls | Manoeuvring studies | No cross-coupling (`Y_rdot`, `N_vdot`) |
 | Diagonal linear + quadratic damping | Standard surge/sway/yaw representation | Moderate speeds and drift angles | No damping cross-terms |
-| Constant inertial wind force, no wind moment | v0.1 simplicity | Weak-to-moderate wind | No apparent-wind model, no wind moment |
-| Ideal actuators with saturation | v0.1 simplicity | Low-frequency control studies | No rate limits, no propeller/rudder dynamics |
+| Constant inertial wind force, no wind moment | Current simplification | Weak-to-moderate wind | No apparent-wind model, no wind moment |
+| Ideal actuators with saturation | Current simplification | Low-frequency control studies | No rate limits, no propeller/rudder dynamics |
 | Zero-order hold control per RK4 step | Standard sampled control | `dt` small relative to dynamics | Inter-sample behaviour not modelled |
 | Illustrative parameters | No vessel data available | Order-of-magnitude behaviour only | Not valid for a specific craft |
 
-## 8. Validation performed (v0.1)
+## 8. Validation performed
 
 All cases below are automated in `tests/test_dynamics.cpp`,
 `tests/test_integrator.cpp` and `tests/test_python.py`.

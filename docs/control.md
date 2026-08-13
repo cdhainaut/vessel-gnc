@@ -1,8 +1,8 @@
 # Baseline control — LOS guidance with PID heading and PI speed control
 
-Status: **v0.2**. The controllers are implemented in C++ (`controllers.hpp`)
-and exposed through the binding; guidance geometry lives in
-`python/vessel_gnc/guidance.py`. All angles in radians, SI units.
+The controllers are implemented in C++ (`controllers.hpp`) and exposed
+through the binding; guidance geometry lives in `python/vessel_gnc/guidance.py`.
+All angles in radians, SI units.
 
 ## 1. Control architecture
 
@@ -89,7 +89,7 @@ compensation).
 
 ## 5. Nonlinear model predictive control (CasADi)
 
-Status: **v0.4**. Implementation in `python/vessel_gnc/nmpc.py`.
+Implementation in `python/vessel_gnc/nmpc.py`.
 
 ### Formulation
 
@@ -144,7 +144,7 @@ back to the rollout automatically.
 | `r_thrust` / `r_moment` | 2e-3 / 1e-2 | actuation effort |
 | `s_thrust` / `s_moment` | 5e-3 / 5e-2 | control-rate smoothing |
 
-### Validation record (v0.4)
+### Validation record
 
 Automated in `tests/test_nmpc.py`:
 
@@ -161,7 +161,7 @@ Automated in `tests/test_nmpc.py`:
 Flagship numbers (example 05, with EKF in the loop, 120 s): RMS cross-track
 1.25 m (LOS: 1.45 m), max 1.73 m (LOS: 2.40 m), mean solve 78 ms, p95 101 ms.
 
-## 7. Known limitations (v0.2-0.4)
+## 7. Known limitations
 
 - **No current compensation**: LOS guidance alone does not counteract a
   steady cross-current; the vessel settles with a small cross-track offset
@@ -177,7 +177,7 @@ Flagship numbers (example 05, with EKF in the loop, 120 s): RMS cross-track
 - Actuator rate limits are not modelled (docs/model.md §5); the NMPC rate
   cost is a soft proxy.
 
-## 8. Validation record (v0.2)
+## 8. Validation record
 
 Automated in `tests/test_controllers.cpp` and `tests/test_guidance.py`:
 

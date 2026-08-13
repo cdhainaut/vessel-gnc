@@ -1,7 +1,7 @@
 # State estimation — EKF with asynchronous noisy sensors
 
-Status: **v0.3**. The filter lives in `python/vessel_gnc/ekf.py`, the sensor
-models in `python/vessel_gnc/sensors.py`. All SI units, angles in radians.
+The filter lives in `python/vessel_gnc/ekf.py`, the sensor models in
+`python/vessel_gnc/sensors.py`. All SI units, angles in radians.
 
 ## 1. Filter state and architecture
 
@@ -72,7 +72,7 @@ Default noise parameters (per-step variances): `q = [1e-4, 1e-4, 1e-5, 5e-4,
 2e-3, 5e-5]` (position, heading, surge, sway, yaw rate) and initial
 covariance `P0 = diag(1, 1, 1e-2, 0.25, 0.25, 1e-2)`.
 
-## 4. Validation record (v0.3)
+## 4. Validation record
 
 Automated in `tests/test_ekf.py`:
 
@@ -88,7 +88,7 @@ Automated in `tests/test_ekf.py`:
 The flagship scenario (example 04) achieves RMS position error 0.80 m and
 RMS yaw-rate error 0.007 rad/s with the default settings.
 
-## 5. Known limitations (v0.3)
+## 5. Known limitations
 
 - The filter does not estimate the current; a steady current appears as a
   velocity bias absorbed by the process noise (position stays accurate thanks
