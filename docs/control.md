@@ -1,0 +1,194 @@
+# Baseline control — LOS guidance with PID heading and PI speed control
+
+Status: **v0.2**. The controllers are implemented in C++ (`controllers.hpp`)
+and exposed through the binding; guidance geometry lives in
+`python/vessel_gnc/guidance.py`. All angles in radians, SI units.
+
+## 1. Control architecture
+
+```text
+reference path ──► LOS guidance ──► psi_ref ──► heading PID ──┐
+ (waypoints)       (lookahead)       u_ref ──► speed PI ──────┼──► [T, N] ──► vessel
+                                                              │            (3-DOF)
+                              ◄── psi, r, u ── measurements ──┘
+```
+
+The controllers run at a fixed rate (10 Hz in the examples); the command is
+held constant between updates (zero-order hold). The simulation loop clamps
+every command to the actuator saturation bounds of `ModelParams`.
+
+## 2. Controllers
+
+### Heading controller
+
+```text
+e = wrap_to_pi(psi_ref - psi)
+N = sat( kp e - kd r + I )
+I += ki e dt,  with anti-windup (see below)
+```
+
+Design choices:
+
+- **Angle wrapping**: `wrap_to_pi` maps the heading error to `(-pi, pi]`, so a
+  reference at `+179 deg` while the vessel sits at `-179 deg` produces a
+  `2 deg` error, not `358 deg`.
+- **Derivative on the measurement**: the D term uses the measured yaw rate
+  `r`, not the derivative of the error — no derivative kick on reference
+  steps, no noise amplification through wrapping.
+- **Anti-windup**: the integrator is frozen whenever the output is saturated
+  and the error pushes further into saturation (conditional integration), and
+  the integrator state itself is clamped to `[-integrator_limit, +integrator_limit]`.
+
+### Speed controller
+
+```text
+e = u_ref - u
+T = sat( kp e + I )
+I += ki e dt,  with the same anti-windup rule
+```
+
+No derivative term (the surge plant is well damped).
+
+## 3. Gains and tuning
+
+Default gains (`default_heading_gains`, `default_speed_gains`) are tuned
+against the default vessel (docs/model.md §6):
+
+| Controller | kp | ki | kd | Output limit | Integrator limit |
+|---|---:|---:|---:|---:|---:|
+| Heading | 12 | 0.1 | 0.5 | 6 N m | 1 N m |
+| Speed | 25 | 15 | 0 | 40 N | 45 N |
+
+Tuning rationale (linearized around cruise `u_eq = 1.36 m/s`):
+
+- The yaw plant `r_dot ~ (N - N_r r)/m33` has a native damping rate
+  `N_r/m33 ~ 5 s^-1`: the loop is inherently overdamped, so `kp` dominates.
+  `kp = 12` gives `kp/N_r ~ 0.4 s^-1` heading-error decay and a `90 deg` step
+  with actuator saturation as the rate-limiting element (~10 s turn).
+- The surge plant time constant is
+  `m11/(X_u + 2 X_|u|u u_eq) ~ 0.8 s`. The PI loop has two real poles; the
+  slow one sits at `ki/(kp + d') ~ 0.21 s^-1` (tau ~ 5 s) and carries the
+  steady thrust (`T_eq ~ 36 N` at `u_ref = 1.3 m/s`).
+
+## 4. LOS guidance
+
+Given the vessel position `p`, the projection onto the polyline path gives:
+
+- **along-track** distance `s` from the start of the closest segment;
+- **cross-track** error `e_ct`, signed: **positive when the vessel is to the
+  left (port) of the path direction**;
+- the **lookahead point** `p_los`, located `Delta = 8 m` further along the
+  path (clamped to the path end);
+- the desired heading `psi_ref = atan2(p_los.y - p.y, p_los.x - p.x)`
+  (bearing from North, clockwise positive).
+
+The fixed lookahead trades tracking sharpness against oscillation: a larger
+`Delta` smooths the command but cuts corners more on curved paths. The
+cross-track error is **not** fed back (pure geometric LOS, no drift
+compensation).
+
+## 5. Nonlinear model predictive control (CasADi)
+
+Status: **v0.4**. Implementation in `python/vessel_gnc/nmpc.py`.
+
+### Formulation
+
+Discrete-time NMPC over a receding horizon of `N = 25` steps of
+`dt = 0.4 s` (10 s horizon), solved at 5 Hz with IPOPT:
+
+```text
+min  sum_k [ q_p |p_k - p_ref,k|^2 + q_psi wrap(psi_k - psi_ref,k)^2
+             + r_t T_k^2 + r_n N_k^2 + s_t dT_k^2 + s_n dN_k^2 ]
+s.t. X_{k+1} = F(X_k, U_k)          (RK4 model, sub-stepped)
+     T_min <= T_k <= T_max          (hard actuator bounds)
+     N_min <= N_k <= N_max
+     X_0 = x_hat                    (pinned current estimate)
+```
+
+with `dT_k = T_k - T_{k-1}` (rate cost, `T_{-1}` = last applied command).
+The reference is a **time-parametrized trajectory** along the path:
+`p_ref,k = path(s_0 + k v_ref dt)` with `s_0 = v_ref t` (mission clock).
+This is deliberate: re-anchoring the reference at the vessel's projection each
+solve hides the along-track lag from the cost and lets the rate cost suppress
+acceleration (the vessel would cruise behind schedule).
+
+### Prediction model
+
+The model is an independent CasADi implementation of the 3-DOF dynamics
+(docs/model.md §2-§3) — deliberately duplicated because CasADi needs symbolic
+expressions. The two implementations are cross-validated bit-closely in
+tests (max diff < 1e-8 over random states).
+
+Each model step integrates `substeps = 2` internal RK4 steps of 0.2 s. A
+single 0.4 s step is outside RK4's stability margin for the yaw dynamics
+once the Munk coupling is active (`m33/N_r ~ 0.2 s` time constant) and
+produced exploding predictions; sub-stepping fixed it (all solves converge,
+mean 75-90 ms).
+
+### Initial guess
+
+The default initial guess is a **physical rollout**: constant drag-balance
+thrust at the current speed, zero moment. A shifted previous solution
+(``warm_start=True``) is available but is not the default: on this nonconvex
+problem it made IPOPT diverge or land in poor local minima (e.g. cruising
+slowly while the reference recedes); the physical rollout is both simpler and
+more robust. When warm start is enabled, a failed warm-started solve falls
+back to the rollout automatically.
+
+### Weights
+
+| Weight | Value | Role |
+|---|---:|---|
+| `q_position` | 8 | path tracking [1/m²] |
+| `q_heading` | 1.5 | tangent alignment [1/rad²] |
+| `r_thrust` / `r_moment` | 2e-3 / 1e-2 | actuation effort |
+| `s_thrust` / `s_moment` | 5e-3 / 5e-2 | control-rate smoothing |
+
+### Validation record (v0.4)
+
+Automated in `tests/test_nmpc.py`:
+
+| Case | Method | Result |
+|---|---|---|
+| Model consistency | CasADi model vs C++ RK4 kernel, 20 random states | max diff < 1e-8 |
+| Constraints | Closed-loop run: all commands within actuator bounds | Pass |
+| Straight-line tracking | Calm water: converges to cruise, no lateral drift | Pass |
+| S-curve regression | Current + wind (unknown to the NMPC), 60 s | RMS cross-track < 1 m, max < 3 m |
+| Solve time | 60 s closed loop | mean < 0.2 s, p95 < 0.4 s |
+| Determinism | Same inputs, same warm start -> identical commands | Pass |
+| Warm start | Shifted guess = previous solution shifted one step | Pass |
+
+Flagship numbers (example 05, with EKF in the loop, 120 s): RMS cross-track
+1.25 m (LOS: 1.45 m), max 1.73 m (LOS: 2.40 m), mean solve 78 ms, p95 101 ms.
+
+## 7. Known limitations (v0.2-0.4)
+
+- **No current compensation**: LOS guidance alone does not counteract a
+  steady cross-current; the vessel settles with a small cross-track offset
+  (`~ Delta * V_c / u` on straight segments) and crabs. This is intentional:
+  it is the baseline that NMPC will be compared against (plan §13).
+- Single speed reference along the whole path (no speed scheduling).
+- The heading loop does not know the path curvature (no feed-forward yaw
+  rate); corners are cut by roughly the lookahead distance.
+- NMPC predicts with the nominal calm-water model: the steady current is not
+  predicted (planned extension, plan §12), so a residual crab remains.
+- NMPC has no obstacle constraints and no terminal cost (10 s horizon is long
+  relative to the vessel dynamics).
+- Actuator rate limits are not modelled (docs/model.md §5); the NMPC rate
+  cost is a soft proxy.
+
+## 8. Validation record (v0.2)
+
+Automated in `tests/test_controllers.cpp` and `tests/test_guidance.py`:
+
+| Case | Method | Result |
+|---|---|---|
+| `wrap_to_pi` | Values across ±π boundaries, bounds check | Pass |
+| Heading PID | Zero error → zero output; D acts on yaw rate | Pass |
+| Anti-windup | Sustained large error: output at limit, integrator bounded, no transient on release | Pass |
+| Saturation | Output never exceeds the moment/thrust limit | Pass |
+| Closed loop | 90 deg step from rest with speed hold (30 s run) | Converged, no overshoot |
+| Closed loop | Heading hold at `psi_ref = 0.4` under `V_c = 0.3 m/s` cross-current (60 s) | Steady-state error < 0.02 rad |
+| LOS geometry | Projection sign convention (left = positive), clamping at path end, lookahead bearing | Pass |
+| Path-following regression | S-curve, `V_c = 0.15 m/s`, `F_wind = 3 N`, 160 s | RMS `e_ct` < 2 m, max < 6 m, bounds respected |
+| Heading step regression | 90 deg step, 30 s | Final error < 0.05 rad, max error < 0.15 rad |
