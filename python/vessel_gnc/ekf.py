@@ -21,21 +21,36 @@ SENSOR_INDICES = {"gnss": [0, 1], "compass": [2], "speed": [3], "gyro": [5]}
 # Sensors whose innovation must be wrapped to (-pi, pi] (heading channels).
 WRAP_INNOVATION = {"compass"}
 
-_DEFAULT_PROCESS_NOISE = [1e-4, 1e-4, 1e-5, 5e-4, 2e-3, 5e-5]  # per-step variances
-_DEFAULT_COV0 = [1.0, 1.0, 1e-2, 0.25, 0.25, 1e-2]
+_DEFAULT_PROCESS_NOISE = [
+    1e-4,
+    1e-4,
+    1e-5,
+    5e-4,
+    2e-3,
+    5e-5,  # vessel per-step variances
+    4e-5,
+    4e-5,  # current components (slowly varying random walk)
+]
+_DEFAULT_COV0 = [1.0, 1.0, 1e-2, 0.25, 0.25, 1e-2, 1e-2, 1e-2]
 
 
 class VesselEKF:
-    """EKF on the 6-D vessel state ``[x, y, psi, u, v, r]``.
+    """Augmented EKF: the 6-D vessel state plus the ambient current.
+
+    State vector ``[x, y, psi, u, v, r, V_cx, V_cy]``: the vessel state
+    (docs/model.md §1) augmented with the inertial current components, which
+    evolve as a slowly varying random walk. The prediction model is the C++
+    RK4 kernel evaluated with the estimated current as the relative-velocity
+    reference (docs/estimation.md §3).
 
     Args:
-        params: vessel model parameters (the filter propagates the nominal,
-            calm-water model; unmodelled disturbances are covered by the
-            process noise).
-        process_noise: 6-vector of per-step variances for the diagonal Q.
+        params: vessel model parameters.
+        process_noise: 8-vector of per-step variances for the diagonal Q
+            (defaults: vessel channels plus a slowly varying current walk).
         dt: filter step [s] (one control period).
-        state0: initial state vector (default: rest at the origin).
-        cov0: initial covariance diagonal (default: modest launch uncertainty).
+        state0: initial state vector (default: rest at the origin, calm).
+        cov0: initial covariance diagonal (default: modest launch
+            uncertainty, current uncertain to 0.1 m/s).
 
     Example:
         >>> import numpy as np
@@ -63,19 +78,17 @@ class VesselEKF:
             process_noise if process_noise is not None else _DEFAULT_PROCESS_NOISE,
             dtype=float,
         )
-        self.x = np.asarray(state0 if state0 is not None else [0.0] * 6, dtype=float)
+        self.x = np.asarray(state0 if state0 is not None else [0.0] * 8, dtype=float)
         self.P = np.diag(
             np.asarray(cov0 if cov0 is not None else _DEFAULT_COV0, dtype=float)
         )
-        # The filter predicts with the nominal (calm) environment: it does not
-        # know the true current/wind (docs/estimation.md §3). It carries the
-        # nominal actuator state as a known quantity (docs/model.md §5).
-        self.environment = _core.Environment()
+        # The filter carries the nominal actuator state as a known quantity
+        # (docs/model.md §5); the current is part of the estimated state.
         self.actuator = _core.ActuatorState()
 
     @property
     def estimate(self) -> _core.State:
-        """The current state estimate as a ``_core.State``."""
+        """The current vessel-state estimate as a ``_core.State``."""
         return _core.State(
             x=self.x[0],
             y=self.x[1],
@@ -84,6 +97,11 @@ class VesselEKF:
             v=self.x[4],
             r=self.x[5],
         )
+
+    @property
+    def current_estimate(self) -> _core.Environment:
+        """The estimated ambient current as an Environment (zero wind)."""
+        return _core.Environment(current_north=self.x[6], current_east=self.x[7])
 
     def predict(self, control: _core.Control) -> None:
         """Propagate the estimate by one step (RK4 kernel + linearized covariance).
@@ -120,15 +138,19 @@ class VesselEKF:
     # --- internals ---------------------------------------------------------
 
     def _propagate(self, x: np.ndarray, control: _core.Control) -> np.ndarray:
+        """One filter step of the 8-state map: the vessel integrates with the
+        estimated current as the relative-velocity reference; the current
+        components follow a random walk (unchanged in the map)."""
         s = _core.State(x=x[0], y=x[1], psi=x[2], u=x[3], v=x[4], r=x[5])
-        nxt = _core.rk4_step(s, control, self.environment, self.params, self.dt)
-        return np.array([nxt.x, nxt.y, nxt.psi, nxt.u, nxt.v, nxt.r])
+        environment = _core.Environment(current_north=x[6], current_east=x[7])
+        nxt = _core.rk4_step(s, control, environment, self.params, self.dt)
+        return np.array([nxt.x, nxt.y, nxt.psi, nxt.u, nxt.v, nxt.r, x[6], x[7]])
 
     def _jacobian(self, control: _core.Control) -> np.ndarray:
-        """Central finite differences of the discrete map around the current state."""
+        """Central finite differences of the 8-state discrete map."""
         finite_difference_step = 1e-6
-        F = np.empty((6, 6))
-        for j in range(6):
+        F = np.empty((8, 8))
+        for j in range(8):
             xp = self.x.copy()
             xp[j] += finite_difference_step
             xm = self.x.copy()
@@ -141,7 +163,7 @@ class VesselEKF:
     def _update_linear(
         self, z: np.ndarray, indices: list[int], r: np.ndarray, wrap: bool
     ) -> None:
-        H = np.zeros((len(indices), 6))
+        H = np.zeros((len(indices), 8))
         H[np.arange(len(indices)), indices] = 1.0
         innovation = z - H @ self.x
         if wrap:
@@ -150,6 +172,6 @@ class VesselEKF:
         K = self.P @ H.T @ np.linalg.inv(S)
         self.x = self.x + K @ innovation
         # Joseph form, then explicit symmetrization (numerical robustness).
-        eye = np.eye(6)
+        eye = np.eye(8)
         self.P = (eye - K @ H) @ self.P @ (eye - K @ H).T + K @ r @ K.T
         self.P = 0.5 * (self.P + self.P.T)

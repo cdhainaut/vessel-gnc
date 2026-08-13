@@ -104,15 +104,16 @@ def test_ekf_covariance_symmetric():
 
 
 def test_ekf_no_noise_consistent():
-    # Exact model (calm water), near-zero measurement noise: the estimate
-    # converges to the true state (docs/estimation.md §4, case B).
+    # Exact model (calm water, constant current), near-zero measurement
+    # noise: the 8-state estimate (vessel + current) converges to the truth
+    # (docs/estimation.md §4, case B).
     params = _core.default_params()
     ekf = VesselEKF(
         params,
-        process_noise=np.zeros(6),
+        process_noise=np.zeros(8),
         dt=0.1,
-        state0=np.array([1.0, -2.0, 0.5, 0.0, 0.0, 0.0]),
-        cov0=np.ones(6),
+        state0=np.array([1.0, -2.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        cov0=np.ones(8),
     )
     r_noiseless = {
         name: np.eye(len(SensorConfig().covariance(name))) * 1e-8
@@ -135,10 +136,60 @@ def test_ekf_no_noise_consistent():
         }
         ekf.predict(cmd)
         ekf.observe(measurements, r_noiseless)
-    err = np.abs(
-        ekf.x - np.array([state.x, state.y, state.psi, state.u, state.v, state.r])
-    )
+    truth = np.array([state.x, state.y, state.psi, state.u, state.v, state.r, 0.0, 0.0])
+    err = np.abs(ekf.x - truth)
     assert np.max(err) < 1e-3
+
+
+def test_ekf_estimates_time_varying_current():
+    # Phase E: the augmented filter tracks the slowly varying current from
+    # noisy sensors and vessel motion alone (docs/estimation.md §4).
+    from vessel_gnc.environment import EnvironmentScenario
+    from vessel_gnc.guidance import los_heading, make_s_curve_path
+
+    scenario = EnvironmentScenario()
+    path = make_s_curve_path()
+    params = _core.default_params()
+    sensors = SensorSuite(SensorConfig(), np.random.default_rng(7))
+    r_cov = {
+        name: SensorConfig().covariance(name)
+        for name in ("gnss", "compass", "speed", "gyro")
+    }
+    heading = _core.HeadingController(_core.default_heading_gains())
+    speed = _core.SpeedController(_core.default_speed_gains())
+    ekf = VesselEKF(params, dt=0.2)
+    prev = _core.Control()
+    current_est = []
+    current_true = []
+
+    def policy(t: float, state: _core.State) -> _core.Control:
+        nonlocal prev
+        ekf.predict(prev)
+        ekf.observe(sensors.sample(state, t), r_cov)
+        xhat = ekf.estimate
+        current_est.append((ekf.x[6], ekf.x[7]))
+        env = scenario.sample(t)
+        current_true.append((env.current_north, env.current_east))
+        (psi_los,) = los_heading(np.array([[xhat.x, xhat.y]]), path, 8.0)
+        moment = heading.update(psi_los, xhat.psi, xhat.r, 0.2)
+        thrust = speed.update(1.3, xhat.u, 0.2)
+        prev = _core.clamp_control(
+            _core.Control(thrust=thrust, yaw_moment=moment), params
+        )
+        return prev
+
+    simulate(
+        120.0, 0.01, control=policy, environment=scenario.sample, control_period=0.2
+    )
+
+    est = np.array(current_est)
+    truth = np.array(current_true)
+    assert np.all(np.isfinite(est))
+    # After the initial transient (20 s), the estimate tracks the rotating
+    # current: the gust events perturb it, so the bound is generous.
+    err = np.hypot(est[:, 0] - truth[:, 0], est[:, 1] - truth[:, 1])
+    assert np.sqrt(np.mean(err[100:] ** 2)) < 0.06
+    assert np.max(err[100:]) < 0.15
 
 
 def test_ekf_tracks_under_noise_closed_loop():

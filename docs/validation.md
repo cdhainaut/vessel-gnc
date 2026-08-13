@@ -43,7 +43,8 @@ Status legend:
 |---|---|---|
 | Sensor schedules, noise statistics, compass wrapping | verified | `tests/test_ekf.py` |
 | Covariance symmetry, positive definiteness, finiteness | verified | `tests/test_ekf.py` |
-| No-noise consistency (exact model → estimate converges) | verified | `tests/test_ekf.py` |
+| No-noise consistency, 8 states (exact model → estimate converges) | verified | `tests/test_ekf.py` |
+| Time-varying current estimation (rotating current + gusts) | validated | `tests/test_ekf.py` |
 | Closed-loop tracking on estimates with unknown current/wind | validated | `tests/test_ekf.py` |
 
 ## Optimal control (NMPC)

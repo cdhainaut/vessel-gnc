@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from vessel_gnc import _core
 from vessel_gnc.ekf import VesselEKF
+from vessel_gnc.environment import EnvironmentScenario
 from vessel_gnc.guidance import (
     los_heading,
     make_s_curve_path,
@@ -38,8 +39,7 @@ NMPC_PERIOD = 0.2  # [s] 5 Hz NMPC / filter
 LOS_PERIOD = 0.1  # [s] 10 Hz LOS controller
 SPEED_REF = 1.3  # [m/s]
 LOOKAHEAD = 8.0  # [m] LOS lookahead
-CURRENT_EAST = 0.15  # [m/s] (unknown to the controllers and the filter)
-WIND_EAST = 3.0  # [N] (unknown to the controllers and the filter)
+SCENARIO = EnvironmentScenario()  # time-varying current + gusts, unknown
 SEED = 42  # reproducible sensor noise
 TRAJ_OUTPUT = Path("results/nmpc_trajectory.png")
 COMPARISON_OUTPUT = Path("results/controller_comparison.png")
@@ -51,8 +51,10 @@ HERO_OUTPUT = Path("assets/hero.gif")
 
 def run_controller(make_policy, period: float, label: str, nmpc=None):
     """Closed loop on EKF estimates; returns (result, metrics, extras)."""
+    # Model mismatch: the plant runs the perturbed truth parameters while the
+    # filter and the controllers use the nominal set (portfolio plan Phase C).
+    plant_params = _core.truth_params()
     params = _core.default_params()
-    env = _core.Environment(current_east=CURRENT_EAST, wind_east=WIND_EAST)
     sensors = SensorSuite(SENSORS, np.random.default_rng(SEED))
     r_cov = {
         name: SENSORS.covariance(name) for name in ("gnss", "compass", "speed", "gyro")
@@ -61,6 +63,7 @@ def run_controller(make_policy, period: float, label: str, nmpc=None):
     prev = _core.Control()
     horizon_shots = []
     solve_times = []
+    current_est = []  # (t, V_cx, V_cy) for the hero animation
 
     def policy(t: float, state: _core.State) -> _core.Control:
         nonlocal prev
@@ -68,15 +71,16 @@ def run_controller(make_policy, period: float, label: str, nmpc=None):
         ekf.observe(sensors.sample(state, t), r_cov)
         xhat = ekf.estimate
         cmd = make_policy(t, xhat, prev, horizon_shots, solve_times, ekf)
+        current_est.append((t, ekf.x[6], ekf.x[7]))
         prev = _core.clamp_control(cmd, params)
         return prev
 
     result = simulate(
         DURATION,
         DT,
-        params=params,
+        params=plant_params,
         control=policy,
-        environment=env,
+        environment=SCENARIO.sample,
         control_period=period,
     )
     path = make_s_curve_path()
@@ -90,7 +94,7 @@ def run_controller(make_policy, period: float, label: str, nmpc=None):
         "moment_rms_Nm",
     ):
         print(f"  {key:24s} {metrics[key]:8.3f}")
-    return result, metrics, horizon_shots, solve_times
+    return result, metrics, horizon_shots, solve_times, np.array(current_est)
 
 
 def los_policy(t, xhat, prev, horizon_shots, solve_times, ekf):
@@ -116,12 +120,16 @@ def nmpc_policy(t, xhat, prev, horizon_shots, solve_times, ekf):
 
 def main() -> None:
     path = make_s_curve_path()
-    los_result, los_metrics, _, _ = run_controller(
+    los_result, los_metrics, _, _, los_current = run_controller(
         los_policy, LOS_PERIOD, "LOS baseline"
     )
-    nmpc_result, nmpc_metrics, horizon_shots, solve_times = run_controller(
-        nmpc_policy, NMPC_PERIOD, "NMPC"
-    )
+    (
+        nmpc_result,
+        nmpc_metrics,
+        horizon_shots,
+        solve_times,
+        nmpc_current,
+    ) = run_controller(nmpc_policy, NMPC_PERIOD, "NMPC")
 
     print(
         f"  NMPC solve time: mean {np.mean(solve_times) * 1e3:.0f} ms, "
@@ -147,12 +155,20 @@ def main() -> None:
     if WRITE_HERO:
         from vessel_gnc.visualization import animate_trajectory
 
+        def estimated_environment(t: float) -> _core.Environment:
+            # Nearest recorded filter estimate.
+            idx = int(np.searchsorted(nmpc_current[:, 0], t, side="right"))
+            idx = min(max(idx - 1, 0), len(nmpc_current) - 1)
+            return _core.Environment(
+                current_north=float(nmpc_current[idx, 1]),
+                current_east=float(nmpc_current[idx, 2]),
+            )
+
         animate_trajectory(
             nmpc_result,
             output_path=HERO_OUTPUT,
-            environment=_core.Environment(
-                current_east=CURRENT_EAST, wind_east=WIND_EAST
-            ),
+            environment=SCENARIO.sample,
+            estimated_environment=estimated_environment,
             title="NMPC path following — predicted horizon",
             stride=40,  # 0.4 s per frame
             fps=12,
@@ -194,7 +210,7 @@ def plot_trajectories(los_result, nmpc_result, horizon_shots):
         xytext=(0.0, 0.0),
         arrowprops=dict(arrowstyle="->", color="tab:blue", lw=2),
     )
-    ax.text(30.5, 18.0, f"current {CURRENT_EAST:.2f} m/s", fontsize=8, color="tab:blue")
+    ax.text(30.5, 18.0, "current (time-varying)", fontsize=8, color="tab:blue")
     ax.set_aspect("equal")
     ax.set_xlabel("x [m] (North)")
     ax.set_ylabel("y [m] (East)")

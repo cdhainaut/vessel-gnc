@@ -86,6 +86,12 @@ force is defined in the inertial frame and rotated into the body frame.
 
 ## 4. Environment model
 
+The simulator accepts either a constant `Environment` or a deterministic
+time-varying policy `t -> Environment` (`python/vessel_gnc/environment.py`):
+the default scenario rotates the current slowly (period 80 s) and adds
+Gaussian wind gusts on top of the mean force — exactly reproducible, no RNG
+(portfolio plan Phase D).
+
 - **Current** — ambient flow with inertial components `(V_cN, V_cE)`, assumed
   uniform and irrotational. Damping and Coriolis terms act on the *relative*
   velocity `nu_rel = nu - R(psi)^T [V_cN, V_cE]^T`, which is the standard

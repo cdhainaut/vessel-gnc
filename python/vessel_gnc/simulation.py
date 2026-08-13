@@ -22,6 +22,12 @@ class ControlPolicy(Protocol):
     def __call__(self, t: float, state: _core.State) -> _core.Control: ...
 
 
+class EnvironmentPolicy(Protocol):
+    """Time-varying environment, sampled at each integration step."""
+
+    def __call__(self, t: float) -> _core.Environment: ...
+
+
 @dataclass(frozen=True)
 class SimulationResult:
     """Time history of a simulation run: state and applied controls."""
@@ -52,7 +58,7 @@ def simulate(
     params: _core.ModelParams | None = None,
     state0: _core.State | None = None,
     control: ControlPolicy | _core.Control | None = None,
-    environment: _core.Environment | None = None,
+    environment: EnvironmentPolicy | _core.Environment | None = None,
     clamp: bool = True,
     control_period: float | None = None,
 ) -> SimulationResult:
@@ -65,7 +71,8 @@ def simulate(
         state0: initial state (default: rest at the origin, heading North).
         control: constant control (zero-order hold) or a policy
             ``(t, state) -> Control`` evaluated at the start of each step.
-        environment: ambient current and wind (default: calm).
+        environment: constant environment, or a policy ``t -> Environment``
+            sampled at each integration step (default: calm).
         clamp: clamp the control to the actuator limits before each step.
         control_period: for policies, the evaluation period [s] (default:
             every step). The last command is held in between (sampled control).
@@ -82,6 +89,7 @@ def simulate(
     """
     params = params if params is not None else _core.default_params()
     state = state0 if state0 is not None else _core.State()
+    env_policy = environment if callable(environment) else None
     environment = environment if environment is not None else _core.Environment()
     control = control if control is not None else _core.Control()
 
@@ -90,6 +98,7 @@ def simulate(
     period = control_period if control_period is not None else dt
     if period <= 0.0:
         raise ValueError("control_period must be positive")
+    env0 = env_policy(0.0) if env_policy is not None else environment
     values = (
         state.x,
         state.y,
@@ -97,10 +106,10 @@ def simulate(
         state.u,
         state.v,
         state.r,
-        environment.current_north,
-        environment.current_east,
-        environment.wind_north,
-        environment.wind_east,
+        env0.current_north,
+        env0.current_east,
+        env0.wind_north,
+        env0.wind_east,
     )
     if not np.isfinite(values).all():
         raise ValueError("state and environment must contain finite values")
@@ -124,6 +133,8 @@ def simulate(
     actuator = _core.ActuatorState()
 
     for k in range(n_steps):
+        if env_policy is not None:
+            environment = env_policy(t[k])
         if is_policy:
             if t[k] >= last_ctrl_t + period - 1e-9:
                 cmd = control(t[k], state)

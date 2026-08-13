@@ -17,7 +17,7 @@ from matplotlib.patches import Polygon
 from matplotlib.transforms import Affine2D
 
 from vessel_gnc import _core
-from vessel_gnc.simulation import SimulationResult
+from vessel_gnc.simulation import EnvironmentPolicy, SimulationResult
 
 __all__ = ["plot_trajectory", "animate_trajectory", "draw_vessel"]
 
@@ -74,6 +74,7 @@ def _environment_arrows(
     x0: float,
     y0: float,
     annotate: bool = False,
+    estimated: bool = False,
 ) -> list[tuple]:
     """Draw current/wind arrows anchored at ``(x0, y0)`` in data coordinates.
 
@@ -81,8 +82,10 @@ def _environment_arrows(
     either as legend handles (``annotate=False``) or as text next to each
     arrow (``annotate=True``). The wind arrow is anchored 1.5 m north of the
     current arrow so the two never overlap when they point in the same
-    direction. Zero components are skipped.
+    direction. With ``estimated=True`` the arrows are dashed and labelled
+    "(estimated)". Zero components are skipped.
     """
+    linestyle = "--" if estimated else "-"
     handles: list[tuple] = []
     if environment is None:
         return handles
@@ -95,11 +98,16 @@ def _environment_arrows(
             "",
             xy=tip,
             xytext=(x0, y0),
-            arrowprops=dict(arrowstyle="->", color="tab:blue", lw=2),
+            arrowprops=dict(
+                arrowstyle="->", color="tab:blue", lw=2, linestyle=linestyle
+            ),
             zorder=5,
         )
-        label = f"current ({np.hypot(vn, ve):.2f} m/s)"
-        handles.append((plt.Line2D([], [], color="tab:blue", lw=2), label))
+        suffix = " (est.)" if estimated else ""
+        label = f"current ({np.hypot(vn, ve):.2f} m/s){suffix}"
+        handles.append(
+            (plt.Line2D([], [], color="tab:blue", lw=2, ls=linestyle), label)
+        )
         if annotate:
             ax.text(tip[0] + 0.2, tip[1] + 0.2, label, fontsize=8, color="tab:blue")
 
@@ -198,7 +206,8 @@ def plot_trajectory(
 def animate_trajectory(
     result: SimulationResult,
     output_path: str | os.PathLike[str] | None = None,
-    environment: _core.Environment | None = None,
+    environment: EnvironmentPolicy | _core.Environment | None = None,
+    estimated_environment: EnvironmentPolicy | None = None,
     title: str = "Vessel trajectory",
     stride: int = 10,
     fps: int = 10,
@@ -221,7 +230,10 @@ def animate_trajectory(
     Args:
         result: simulation result to animate.
         output_path: save the animation as a GIF here when given.
-        environment: ambient current and wind, drawn as corner arrows.
+        environment: ambient current and wind, either constant or sampled
+            per frame (``t -> Environment``), drawn as corner arrows.
+        estimated_environment: estimated current (e.g. from the EKF),
+            sampled per frame and drawn dashed next to the true arrows.
         title: figure title.
         stride: display one sample every ``stride`` integration steps
             (frame period = ``dt * stride``).
@@ -272,13 +284,17 @@ def animate_trajectory(
         ax.legend(list(artists), list(labels), loc="upper right", framealpha=0.9)
     ax.plot(result.x[0], result.y[0], "o", color="tab:green", ms=8)
     hull, heading = _create_vessel_artists(ax)
-    _environment_arrows(
-        ax,
-        environment,
-        x_lo - margin + 1.5,
-        y_lo - margin + 1.5,
-        annotate=True,
-    )
+    # Environment arrows are per-frame when the environment is time-varying.
+    env_arrow_anchor = (x_lo - margin + 1.5, y_lo - margin + 1.5)
+    env_artists = []
+    if not callable(environment):
+        env_artists += _environment_arrows(
+            ax, environment, *env_arrow_anchor, annotate=True
+        )
+    if not callable(estimated_environment):
+        env_artists += _environment_arrows(
+            ax, estimated_environment, *env_arrow_anchor, annotate=True, estimated=True
+        )
     info = ax.text(
         0.02,
         0.97,
@@ -308,6 +324,24 @@ def animate_trajectory(
 
     def update(frame: int) -> tuple:
         i = int(indices[frame])
+        frame_env = env_artists
+        if callable(environment) or callable(estimated_environment):
+            for artist in env_artists:
+                artist.remove()
+            frame_env = []
+            t_now = result.t[i]
+            if callable(environment):
+                frame_env += _environment_arrows(
+                    ax, environment(t_now), *env_arrow_anchor, annotate=True
+                )
+            if callable(estimated_environment):
+                frame_env += _environment_arrows(
+                    ax,
+                    estimated_environment(t_now),
+                    *env_arrow_anchor,
+                    annotate=True,
+                    estimated=True,
+                )
         trail_line.set_data(result.x[:i], result.y[:i])
 
         j0 = max(0, i - wake_steps)
@@ -337,7 +371,7 @@ def animate_trajectory(
             f"V = {speed[i]:4.2f} m/s\n"
             f"psi = {np.degrees(result.psi[i]):6.1f} deg"
         )
-        return trail_line, wake, hull, heading, info, horizon_line, horizon_end
+        return (trail_line, wake, hull, heading, info, horizon_line, horizon_end)
 
     anim = animation.FuncAnimation(
         fig, update, frames=len(indices), interval=1000 // fps, blit=False
