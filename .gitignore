@@ -15,6 +15,10 @@ __pycache__/
 # Generated outputs
 results/
 
+# Local agent context and internal roadmap (not part of the public repo)
+AGENTS.md
+vessel-gnc-plan.md
+
 # Editors / OS
 .vscode/
 .idea/
