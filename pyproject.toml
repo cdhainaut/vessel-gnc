@@ -36,7 +36,7 @@ cmake.args = ["-DBUILD_TESTING=OFF"]
 wheel.packages = ["python/vessel_gnc"]
 
 [tool.ruff]
-line-length = 100
+line-length = 88
 target-version = "py312"
 extend-exclude = ["build"]
 

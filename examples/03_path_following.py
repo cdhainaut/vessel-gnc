@@ -63,11 +63,15 @@ def main() -> None:
 
     _, _, cross = project_onto_path(np.column_stack([result.x, result.y]), path)
 
-    fig, (ax_traj, ax_err) = plt.subplots(1, 2, figsize=(11.5, 5.2), constrained_layout=True)
+    fig, (ax_traj, ax_err) = plt.subplots(
+        1, 2, figsize=(11.5, 5.2), constrained_layout=True
+    )
     ax_traj.plot(path[:, 0], path[:, 1], "k--", lw=1.2, label="reference path")
     ax_traj.plot(result.x, result.y, lw=1.6, label="vessel")
     ax_traj.plot(result.x[0], result.y[0], "o", color="tab:green", ms=8, label="start")
-    ax_traj.plot(result.x[-1], result.y[-1], "x", color="tab:red", ms=10, mew=2, label="end")
+    ax_traj.plot(
+        result.x[-1], result.y[-1], "x", color="tab:red", ms=10, mew=2, label="end"
+    )
     ax_traj.set_aspect("equal")
     ax_traj.set_xlabel("x [m] (North)")
     ax_traj.set_ylabel("y [m] (East)")

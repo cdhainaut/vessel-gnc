@@ -52,7 +52,9 @@ def bench_nmpc() -> tuple[float, float]:
 
     def policy(t: float, state: _core.State) -> _core.Control:
         nonlocal prev
-        refs, psi_refs = path_reference(path, 1.3 * t, 1.3, nmpc.config.dt, nmpc.config.horizon)
+        refs, psi_refs = path_reference(
+            path, 1.3 * t, 1.3, nmpc.config.dt, nmpc.config.horizon
+        )
         cmd = nmpc.solve(state, refs, psi_refs, prev)
         times.append(nmpc.last_solve_time)
         prev = _core.clamp_control(cmd, _core.default_params())

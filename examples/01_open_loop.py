@@ -39,7 +39,9 @@ def main() -> None:
     )
     control = _core.Control(thrust=THRUST, yaw_moment=YAW_MOMENT)
 
-    result = simulate(DURATION, DT, params=params, control=control, environment=environment)
+    result = simulate(
+        DURATION, DT, params=params, control=control, environment=environment
+    )
 
     distance = float(np.hypot(np.diff(result.x), np.diff(result.y)).sum())
     speed = np.hypot(result.u, result.v)
@@ -53,7 +55,10 @@ def main() -> None:
         result,
         output_path=OUTPUT,
         environment=environment,
-        title=f"Open-loop trajectory — {DURATION:g} s, T = {THRUST:g} N, N = {YAW_MOMENT:g} N m",
+        title=(
+            f"Open-loop trajectory — {DURATION:g} s, "
+            f"T = {THRUST:g} N, N = {YAW_MOMENT:g} N m"
+        ),
     )
     print(f"wrote {OUTPUT}")
 

@@ -134,6 +134,12 @@ def plot_trajectory(
 
     Saves the figure to ``output_path`` when given (parent directories are
     created) and returns the figure.
+
+    Example:
+        >>> from vessel_gnc import _core, simulate
+        >>> from vessel_gnc.visualization import plot_trajectory
+        >>> result = simulate(30.0, 0.01, control=_core.Control(thrust=40.0))
+        >>> figure = plot_trajectory(result, output_path="results/example.png")
     """
     speed = np.hypot(result.u, result.v)
 
@@ -165,7 +171,9 @@ def plot_trajectory(
 
     # Start / end markers and the vessel at its final pose.
     (start_line,) = ax.plot(result.x[0], result.y[0], "o", color="tab:green", ms=8)
-    (end_line,) = ax.plot(result.x[-1], result.y[-1], "x", color="tab:red", ms=10, mew=2)
+    (end_line,) = ax.plot(
+        result.x[-1], result.y[-1], "x", color="tab:red", ms=10, mew=2
+    )
     draw_vessel(ax, result.x[-1], result.y[-1], result.psi[-1])
 
     # Environment arrows (with legend entries carrying the true values).
@@ -249,7 +257,9 @@ def animate_trajectory(
     legend_entries = []
     if reference_path is not None:
         ax.plot(rp[:, 0], rp[:, 1], "k--", lw=1.2, zorder=1)
-        legend_entries.append((plt.Line2D([], [], color="k", ls="--", lw=1.2), "reference"))
+        legend_entries.append(
+            (plt.Line2D([], [], color="k", ls="--", lw=1.2), "reference")
+        )
     if horizon:
         legend_entries.append(
             (

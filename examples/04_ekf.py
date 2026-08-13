@@ -39,7 +39,9 @@ def main() -> None:
     environment = _core.Environment(current_east=CURRENT_EAST, wind_east=WIND_EAST)
     rng = np.random.default_rng(SEED)
     sensors = SensorSuite(SENSORS, rng)
-    r_cov = {name: SENSORS.covariance(name) for name in ("gnss", "compass", "speed", "gyro")}
+    r_cov = {
+        name: SENSORS.covariance(name) for name in ("gnss", "compass", "speed", "gyro")
+    }
 
     heading = _core.HeadingController(_core.default_heading_gains())
     speed = _core.SpeedController(_core.default_speed_gains())
@@ -62,7 +64,9 @@ def main() -> None:
         (psi_los,) = los_heading(np.array([[xhat.x, xhat.y]]), path, LOOKAHEAD)
         moment = heading.update(psi_los, xhat.psi, xhat.r, CONTROL_PERIOD)
         thrust = speed.update(SPEED_REF, xhat.u, CONTROL_PERIOD)
-        prev_cmd = _core.clamp_control(_core.Control(thrust=thrust, yaw_moment=moment), params)
+        prev_cmd = _core.clamp_control(
+            _core.Control(thrust=thrust, yaw_moment=moment), params
+        )
 
         t_rec.append(t)
         x_rec.append(state.x)
@@ -95,11 +99,16 @@ def main() -> None:
     pos_err = np.hypot(x_true - x_hat, y_true - y_hat)
     r_hat = np.array(rhat_rec)
     r_true = result.r[::10][: len(r_hat)]  # control-rate samples match the recording
-    print(f"position error: rms {np.sqrt(np.mean(pos_err**2)):.2f} m, max {np.max(pos_err):.2f} m")
+    print(
+        f"position error: rms {np.sqrt(np.mean(pos_err**2)):.2f} m, "
+        f"max {np.max(pos_err):.2f} m"
+    )
     print(f"yaw-rate error: rms {np.sqrt(np.mean((r_true - r_hat) ** 2)):.3f} rad/s")
 
     t_arr = np.array(t_rec)
-    fig, (ax_traj, ax_r, ax_err) = plt.subplots(1, 3, figsize=(14.5, 4.8), constrained_layout=True)
+    fig, (ax_traj, ax_r, ax_err) = plt.subplots(
+        1, 3, figsize=(14.5, 4.8), constrained_layout=True
+    )
 
     ax_traj.plot(path[:, 0], path[:, 1], "k--", lw=1.2, label="reference path")
     ax_traj.plot(x_true, y_true, color="0.6", lw=1.4, label="true")
@@ -114,7 +123,9 @@ def main() -> None:
 
     t_gyro, r_meas_arr = zip(*r_meas, strict=True) if r_meas else ([], [])
     ax_r.plot(t_arr, r_true, color="0.6", lw=1.4, label="true")
-    ax_r.plot(t_gyro, r_meas_arr, color="tab:red", lw=0.8, alpha=0.5, label="gyro (raw)")
+    ax_r.plot(
+        t_gyro, r_meas_arr, color="tab:red", lw=0.8, alpha=0.5, label="gyro (raw)"
+    )
     ax_r.plot(t_arr, r_hat, color="tab:blue", lw=1.4, label="EKF")
     ax_r.set_xlabel("t [s]")
     ax_r.set_ylabel("yaw rate r [rad/s]")

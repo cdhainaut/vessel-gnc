@@ -72,6 +72,13 @@ def simulate(
 
     Returns:
         A SimulationResult with the state and applied-control histories.
+
+    Example:
+        >>> from vessel_gnc import _core, simulate
+        >>> result = simulate(
+        ...     30.0, 0.01, control=_core.Control(thrust=25.0, yaw_moment=0.5)
+        ... )
+        >>> result.x[-1]  # final North position [m]  # doctest: +SKIP
     """
     params = params if params is not None else _core.default_params()
     state = state0 if state0 is not None else _core.State()
@@ -98,24 +105,24 @@ def simulate(
     if not np.isfinite(values).all():
         raise ValueError("state and environment must contain finite values")
 
-    n = int(round(duration / dt))
-    if n < 1:
-        raise ValueError(f"duration/dt must be >= 1, got {n} step(s)")
+    n_steps = int(round(duration / dt))
+    if n_steps < 1:
+        raise ValueError(f"duration/dt must be >= 1, got {n_steps} step(s)")
 
     is_policy = callable(control)
     last_ctrl_t = -np.inf
-    n_out = n + 1
-    t = np.arange(n_out) * dt
-    x = np.empty(n_out)
-    y = np.empty(n_out)
-    psi = np.empty(n_out)
-    u = np.empty(n_out)
-    v = np.empty(n_out)
-    r = np.empty(n_out)
-    thrust = np.empty(n_out)
-    yaw_moment = np.empty(n_out)
+    n_samples = n_steps + 1
+    t = np.arange(n_samples) * dt
+    x = np.empty(n_samples)
+    y = np.empty(n_samples)
+    psi = np.empty(n_samples)
+    u = np.empty(n_samples)
+    v = np.empty(n_samples)
+    r = np.empty(n_samples)
+    thrust = np.empty(n_samples)
+    yaw_moment = np.empty(n_samples)
 
-    for k in range(n):
+    for k in range(n_steps):
         if is_policy:
             if t[k] >= last_ctrl_t + period - 1e-9:
                 cmd = control(t[k], state)
@@ -134,12 +141,12 @@ def simulate(
         yaw_moment[k] = cmd.yaw_moment
         state = _core.rk4_step(state, cmd, environment, params, dt)
 
-    x[n] = state.x
-    y[n] = state.y
-    psi[n] = state.psi
-    u[n] = state.u
-    v[n] = state.v
-    r[n] = state.r
+    x[n_steps] = state.x
+    y[n_steps] = state.y
+    psi[n_steps] = state.psi
+    u[n_steps] = state.u
+    v[n_steps] = state.v
+    r[n_steps] = state.r
 
     return SimulationResult(
         t=t,

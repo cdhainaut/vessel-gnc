@@ -36,6 +36,17 @@ class VesselEKF:
         dt: filter step [s] (one control period).
         state0: initial state vector (default: rest at the origin).
         cov0: initial covariance diagonal (default: modest launch uncertainty).
+
+    Example:
+        >>> import numpy as np
+        >>> from vessel_gnc import _core
+        >>> from vessel_gnc.ekf import VesselEKF
+        >>> ekf = VesselEKF(_core.default_params(), dt=0.1)
+        >>> ekf.predict(_core.Control(thrust=20.0))
+        >>> ekf.observe(
+        ...     {"gnss": np.array([0.5, -0.2])},
+        ...     {"gnss": np.diag([0.25, 0.25])},
+        ... )
     """
 
     def __init__(
@@ -53,7 +64,9 @@ class VesselEKF:
             dtype=float,
         )
         self.x = np.asarray(state0 if state0 is not None else [0.0] * 6, dtype=float)
-        self.P = np.diag(np.asarray(cov0 if cov0 is not None else _DEFAULT_COV0, dtype=float))
+        self.P = np.diag(
+            np.asarray(cov0 if cov0 is not None else _DEFAULT_COV0, dtype=float)
+        )
         # The filter predicts with the nominal (calm) environment: it does not
         # know the true current/wind (docs/estimation.md §3).
         self.environment = _core.Environment()
@@ -76,7 +89,9 @@ class VesselEKF:
         self.x = self._propagate(self.x, control)
         self.P = F @ self.P @ F.T + np.diag(self.q)
 
-    def observe(self, measurements: dict[str, np.ndarray], r: dict[str, np.ndarray]) -> None:
+    def observe(
+        self, measurements: dict[str, np.ndarray], r: dict[str, np.ndarray]
+    ) -> None:
         """Update with the available measurements (Joseph form).
 
         Args:
@@ -86,7 +101,9 @@ class VesselEKF:
         for name, z in measurements.items():
             if name not in SENSOR_INDICES:
                 raise ValueError(f"unknown sensor '{name}'")
-            self._update_linear(z, SENSOR_INDICES[name], r[name], name in WRAP_INNOVATION)
+            self._update_linear(
+                z, SENSOR_INDICES[name], r[name], name in WRAP_INNOVATION
+            )
 
     # --- internals ---------------------------------------------------------
 
@@ -97,17 +114,21 @@ class VesselEKF:
 
     def _jacobian(self, control: _core.Control) -> np.ndarray:
         """Central finite differences of the discrete map around the current state."""
-        h = 1e-6
+        finite_difference_step = 1e-6
         F = np.empty((6, 6))
         for j in range(6):
             xp = self.x.copy()
-            xp[j] += h
+            xp[j] += finite_difference_step
             xm = self.x.copy()
-            xm[j] -= h
-            F[:, j] = (self._propagate(xp, control) - self._propagate(xm, control)) / (2.0 * h)
+            xm[j] -= finite_difference_step
+            F[:, j] = (self._propagate(xp, control) - self._propagate(xm, control)) / (
+                2.0 * finite_difference_step
+            )
         return F
 
-    def _update_linear(self, z: np.ndarray, indices: list[int], r: np.ndarray, wrap: bool) -> None:
+    def _update_linear(
+        self, z: np.ndarray, indices: list[int], r: np.ndarray, wrap: bool
+    ) -> None:
         H = np.zeros((len(indices), 6))
         H[np.arange(len(indices)), indices] = 1.0
         innovation = z - H @ self.x

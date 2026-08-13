@@ -37,6 +37,13 @@ def project_onto_path(
           (clamped to the segment);
         - cross_track: signed distance [m], **positive when the point is to
           the left (port) of the path direction**.
+
+    Example:
+        >>> import numpy as np
+        >>> from vessel_gnc.guidance import project_onto_path
+        >>> path = np.array([[0.0, 0.0], [100.0, 0.0]])  # heading North
+        >>> project_onto_path(np.array([[50.0, 5.0]]), path)
+        (array([0]), array([50.]), array([-5.]))
     """
     points = np.atleast_2d(np.asarray(points, dtype=float))
     path = np.asarray(path, dtype=float)
@@ -71,6 +78,13 @@ def los_heading(points: np.ndarray, path: np.ndarray, lookahead: float) -> np.nd
     The lookahead point lies ``lookahead`` [m] along the path from the
     projection of the point (clamped to the path end). The desired heading is
     the bearing to that point.
+
+    Example:
+        >>> import numpy as np
+        >>> from vessel_gnc.guidance import los_heading
+        >>> path = np.array([[0.0, 0.0], [0.0, 100.0]])  # heading East
+        >>> los_heading(np.array([[0.0, 0.0]]), path, lookahead=10.0)
+        array([1.57079633])
     """
     if lookahead <= 0.0:
         raise ValueError("lookahead must be positive")
@@ -100,7 +114,9 @@ def path_arc_lengths(path: np.ndarray) -> np.ndarray:
     return np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(path, axis=0).T))])
 
 
-def path_points(path: np.ndarray, arc_lengths: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def path_points(
+    path: np.ndarray, arc_lengths: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
     """Positions and tangent headings at absolute arc lengths along the path.
 
     Arc lengths are clamped to the path ends. Returns ``(refs, psi_refs)`` of

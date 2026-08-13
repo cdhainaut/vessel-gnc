@@ -20,7 +20,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 from vessel_gnc import _core
 from vessel_gnc.ekf import VesselEKF
-from vessel_gnc.guidance import los_heading, make_s_curve_path, path_reference, project_onto_path
+from vessel_gnc.guidance import (
+    los_heading,
+    make_s_curve_path,
+    path_reference,
+    project_onto_path,
+)
 from vessel_gnc.metrics import path_following_metrics
 from vessel_gnc.nmpc import VesselNmpc
 from vessel_gnc.sensors import SensorConfig, SensorSuite
@@ -49,7 +54,9 @@ def run_controller(make_policy, period: float, label: str, nmpc=None):
     params = _core.default_params()
     env = _core.Environment(current_east=CURRENT_EAST, wind_east=WIND_EAST)
     sensors = SensorSuite(SENSORS, np.random.default_rng(SEED))
-    r_cov = {name: SENSORS.covariance(name) for name in ("gnss", "compass", "speed", "gyro")}
+    r_cov = {
+        name: SENSORS.covariance(name) for name in ("gnss", "compass", "speed", "gyro")
+    }
     ekf = VesselEKF(params, dt=period)
     prev = _core.Control()
     horizon_shots = []
@@ -107,7 +114,9 @@ def nmpc_policy(t, xhat, prev, horizon_shots, solve_times):
 
 def main() -> None:
     path = make_s_curve_path()
-    los_result, los_metrics, _, _ = run_controller(los_policy, LOS_PERIOD, "LOS baseline")
+    los_result, los_metrics, _, _ = run_controller(
+        los_policy, LOS_PERIOD, "LOS baseline"
+    )
     nmpc_result, nmpc_metrics, horizon_shots, solve_times = run_controller(
         nmpc_policy, NMPC_PERIOD, "NMPC"
     )
@@ -139,14 +148,19 @@ def main() -> None:
         animate_trajectory(
             nmpc_result,
             output_path=HERO_OUTPUT,
-            environment=_core.Environment(current_east=CURRENT_EAST, wind_east=WIND_EAST),
+            environment=_core.Environment(
+                current_east=CURRENT_EAST, wind_east=WIND_EAST
+            ),
             title="NMPC path following — predicted horizon",
             stride=40,  # 0.4 s per frame
             fps=12,
             wake_duration=12.0,
             reference_path=path,
             horizon=horizon_shots,
-            horizon_label=f"NMPC prediction ({NMPC.config.horizon * NMPC.config.dt:.0f} s horizon)",
+            horizon_label=(
+                "NMPC prediction "
+                f"({NMPC.config.horizon * NMPC.config.dt:.0f} s horizon)"
+            ),
         )
         print(f"wrote {HERO_OUTPUT}")
 
@@ -160,9 +174,17 @@ def plot_trajectories(los_result, nmpc_result, horizon_shots):
     for _, traj in horizon_shots:
         ax.plot(traj[0], traj[1], color="tab:cyan", lw=1.0, alpha=0.7)
         ax.plot(traj[0, 0], traj[1, 0], "o", color="tab:cyan", ms=4)
-    ax.plot(nmpc_result.x[0], nmpc_result.y[0], "o", color="tab:green", ms=8, label="start")
     ax.plot(
-        nmpc_result.x[-1], nmpc_result.y[-1], "x", color="tab:red", ms=10, mew=2, label="end (NMPC)"
+        nmpc_result.x[0], nmpc_result.y[0], "o", color="tab:green", ms=8, label="start"
+    )
+    ax.plot(
+        nmpc_result.x[-1],
+        nmpc_result.y[-1],
+        "x",
+        color="tab:red",
+        ms=10,
+        mew=2,
+        label="end (NMPC)",
     )
     ax.annotate(
         "",
@@ -183,8 +205,12 @@ def plot_trajectories(los_result, nmpc_result, horizon_shots):
 
 def plot_comparison(los_result, los_metrics, nmpc_result, nmpc_metrics, solve_times):
     path = make_s_curve_path()
-    _, _, cross_los = project_onto_path(np.column_stack([los_result.x, los_result.y]), path)
-    _, _, cross_nmpc = project_onto_path(np.column_stack([nmpc_result.x, nmpc_result.y]), path)
+    _, _, cross_los = project_onto_path(
+        np.column_stack([los_result.x, los_result.y]), path
+    )
+    _, _, cross_nmpc = project_onto_path(
+        np.column_stack([nmpc_result.x, nmpc_result.y]), path
+    )
 
     fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.2), constrained_layout=True)
 

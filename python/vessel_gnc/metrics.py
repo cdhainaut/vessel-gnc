@@ -20,11 +20,22 @@ def path_following_metrics(
 
     Returns a JSON-serializable dict with cross-track error, LOS heading
     error and actuator effort statistics.
+
+    Example:
+        >>> import json
+        >>> from vessel_gnc import _core, simulate
+        >>> from vessel_gnc.guidance import make_s_curve_path
+        >>> from vessel_gnc.metrics import path_following_metrics
+        >>> result = simulate(30.0, 0.01, control=_core.Control(thrust=40.0))
+        >>> metrics = path_following_metrics(result, make_s_curve_path(), 8.0)
+        >>> json.dumps(metrics)  # doctest: +SKIP
     """
     points = np.column_stack([result.x, result.y])
     _, _, cross = project_onto_path(points, path)
     psi_los = los_heading(points, path, lookahead)
-    heading_error = np.arctan2(np.sin(psi_los - result.psi), np.cos(psi_los - result.psi))
+    heading_error = np.arctan2(
+        np.sin(psi_los - result.psi), np.cos(psi_los - result.psi)
+    )
 
     return {
         "cross_track_rms_m": float(np.sqrt(np.mean(cross**2))),

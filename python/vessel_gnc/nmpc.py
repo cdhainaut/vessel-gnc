@@ -58,7 +58,9 @@ class VesselNmpc:
     ):
         self.params = params
         self.config = config if config is not None else NmpcConfig()
-        self.environment = environment if environment is not None else _core.Environment()
+        self.environment = (
+            environment if environment is not None else _core.Environment()
+        )
         self.last_solve_time = 0.0  # [s]
         self.last_status = ""
         self.last_trajectory: np.ndarray | None = None  # (6, N+1)
@@ -82,12 +84,16 @@ class VesselNmpc:
             psi_refs: (N,) reference headings [rad] (path tangents).
             u_prev: previously applied control (rate-cost anchor).
         """
-        n = self.config.horizon
+        n_steps = self.config.horizon
         x0 = np.array([state.x, state.y, state.psi, state.u, state.v, state.r])
         self.lbw[:6] = x0
         self.ubw[:6] = x0
         p = np.concatenate(
-            [np.asarray(refs, dtype=float).ravel(), psi_refs, [u_prev.thrust, u_prev.yaw_moment]]
+            [
+                np.asarray(refs, dtype=float).ravel(),
+                psi_refs,
+                [u_prev.thrust, u_prev.yaw_moment],
+            ]
         )
 
         t0 = time.perf_counter()
@@ -97,7 +103,14 @@ class VesselNmpc:
         # with automatic fallback to the physical rollout (a shifted guess can
         # make IPOPT diverge on this nonconvex problem, see docs/control.md §5).
         for guess in self._guesses(x0):
-            sol = self.solver(x0=guess, lbx=self.lbw, ubx=self.ubw, lbg=self.lbg, ubg=self.ubg, p=p)
+            sol = self.solver(
+                x0=guess,
+                lbx=self.lbw,
+                ubx=self.ubw,
+                lbg=self.lbg,
+                ubg=self.ubg,
+                p=p,
+            )
             status = self.solver.stats()["return_status"]
             if self._ok(status):
                 break
@@ -107,11 +120,12 @@ class VesselNmpc:
 
         w = np.array(sol["x"]).ravel()
         # CasADi stores MX column-major: reshape/ravel with Fortran order.
-        self.last_trajectory = w[: 6 * (n + 1)].reshape(6, n + 1, order="F")
-        self.last_controls = w[6 * (n + 1) :].reshape(2, n, order="F")
+        self.last_trajectory = w[: 6 * (n_steps + 1)].reshape(6, n_steps + 1, order="F")
+        self.last_controls = w[6 * (n_steps + 1) :].reshape(2, n_steps, order="F")
         self.w0 = w
         return _core.Control(
-            thrust=float(self.last_controls[0, 0]), yaw_moment=float(self.last_controls[1, 0])
+            thrust=float(self.last_controls[0, 0]),
+            yaw_moment=float(self.last_controls[1, 0]),
         )
 
     def reset(self) -> None:
@@ -126,7 +140,7 @@ class VesselNmpc:
 
     def _build(self) -> None:
         cfg = self.config
-        n = cfg.horizon
+        n_steps = cfg.horizon
 
         # Decision variables: X (6, N+1), U (2, N).
         x = ca.MX.sym("x", 6)
@@ -134,19 +148,19 @@ class VesselNmpc:
         F = ca.Function("F", [x, u], [self._discrete_step(x, u)])
         self.F = F
 
-        X = ca.MX.sym("X", 6, n + 1)
-        U = ca.MX.sym("U", 2, n)
+        X = ca.MX.sym("X", 6, n_steps + 1)
+        U = ca.MX.sym("U", 2, n_steps)
         w = ca.vertcat(ca.reshape(X, -1, 1), ca.reshape(U, -1, 1))
 
         # Parameters: reference positions/headings and the previous control.
-        refs = ca.MX.sym("refs", 2, n)
-        psi_refs = ca.MX.sym("psi_refs", n)
+        refs = ca.MX.sym("refs", 2, n_steps)
+        psi_refs = ca.MX.sym("psi_refs", n_steps)
         u_prev = ca.MX.sym("u_prev", 2)
         p = ca.vertcat(ca.reshape(refs, -1, 1), psi_refs, u_prev)
 
         # Stage cost (docs/control.md §5).
         cost = 0.0
-        for k in range(n):
+        for k in range(n_steps):
             e_pos = X[0:2, k + 1] - refs[:, k]
             cost += cfg.q_position * ca.dot(e_pos, e_pos)
             e_psi = X[2, k + 1] - psi_refs[k]
@@ -156,30 +170,32 @@ class VesselNmpc:
             cost += cfg.s_thrust * du[0] ** 2 + cfg.s_moment * du[1] ** 2
 
         # Dynamics constraints: X_{k+1} = F(X_k, U_k).
-        g = ca.vertcat(*[X[:, k + 1] - F(X[:, k], U[:, k]) for k in range(n)])
+        g = ca.vertcat(*[X[:, k + 1] - F(X[:, k], U[:, k]) for k in range(n_steps)])
 
         opts = {
             "ipopt": {"print_level": 0, "sb": "yes", "max_iter": 500, "tol": 1e-6},
             "print_time": False,
         }
-        self.solver = ca.nlpsol("nmpc", "ipopt", {"x": w, "f": cost, "g": g, "p": p}, opts)
+        self.solver = ca.nlpsol(
+            "nmpc", "ipopt", {"x": w, "f": cost, "g": g, "p": p}, opts
+        )
 
         # Bounds: control saturation (static), initial state pinned per solve,
         # and generous state bounds (they never bind in practice but keep IPOPT
         # from exploring states where the quadratic damping overflows).
-        n_x = 6 * (n + 1)
-        self.lbw = np.full(n_x + 2 * n, -ca.inf)
-        self.ubw = np.full(n_x + 2 * n, ca.inf)
+        n_x = 6 * (n_steps + 1)
+        self.lbw = np.full(n_x + 2 * n_steps, -ca.inf)
+        self.ubw = np.full(n_x + 2 * n_steps, ca.inf)
         state_lo = np.array([-1e3, -1e3, -200.0, -10.0, -10.0, -5.0])
         state_hi = np.array([1e3, 1e3, 200.0, 10.0, 10.0, 5.0])
-        self.lbw[:n_x] = np.tile(state_lo, n + 1)
-        self.ubw[:n_x] = np.tile(state_hi, n + 1)
+        self.lbw[:n_x] = np.tile(state_lo, n_steps + 1)
+        self.ubw[:n_x] = np.tile(state_hi, n_steps + 1)
         self.lbw[n_x::2] = self.params.thrust_min
         self.ubw[n_x::2] = self.params.thrust_max
         self.lbw[n_x + 1 :: 2] = self.params.moment_min
         self.ubw[n_x + 1 :: 2] = self.params.moment_max
-        self.lbg = np.zeros(6 * n)
-        self.ubg = np.zeros(6 * n)
+        self.lbg = np.zeros(6 * n_steps)
+        self.ubg = np.zeros(6 * n_steps)
         self.w0 = None
 
     def _discrete_step(self, x: ca.MX, u: ca.MX) -> ca.MX:
@@ -213,14 +229,14 @@ class VesselNmpc:
             (u[1] - cr - dr) / m33,
         )
         f = ca.Function("f", [x, u], [x_dot])
-        h = self.config.dt / self.config.substeps
+        substep_dt = self.config.dt / self.config.substeps
         xk = x
         for _ in range(self.config.substeps):
             k1 = f(xk, u)
-            k2 = f(xk + h / 2 * k1, u)
-            k3 = f(xk + h / 2 * k2, u)
-            k4 = f(xk + h * k3, u)
-            xk = xk + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+            k2 = f(xk + substep_dt / 2 * k1, u)
+            k3 = f(xk + substep_dt / 2 * k2, u)
+            k4 = f(xk + substep_dt * k3, u)
+            xk = xk + substep_dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
         return xk
 
     def _ok(self, status: str) -> bool:
@@ -237,29 +253,29 @@ class VesselNmpc:
     def _rollout_guess(self, x0: np.ndarray) -> np.ndarray:
         """Physical guess: constant drag-balance thrust at the current speed,
         zero moment, rolled out through the model (dynamically consistent)."""
-        n = self.config.horizon
+        n_steps = self.config.horizon
         p = self.params
         t_eq = p.lin_damping_u * x0[3] + p.quad_damping_u * abs(x0[3]) * x0[3]
         u_const = np.array([t_eq, 0.0])
-        X = np.empty((6, n + 1))
+        X = np.empty((6, n_steps + 1))
         X[:, 0] = x0
-        for k in range(n):
+        for k in range(n_steps):
             X[:, k + 1] = self.model_step(X[:, k], u_const)
-        U = np.tile(u_const, (n, 1)).T
+        U = np.tile(u_const, (n_steps, 1)).T
         # CasADi stores MX column-major: ravel with Fortran order.
         return np.concatenate([X.ravel(order="F"), U.ravel(order="F")])
 
     def _shifted_guess(self, x0: np.ndarray) -> np.ndarray:
         """Previous solution shifted by one step, with the new state pinned."""
-        n = self.config.horizon
+        n_steps = self.config.horizon
         w = self.w0
-        X = w[: 6 * (n + 1)].reshape(6, n + 1, order="F")
-        U = w[6 * (n + 1) :].reshape(2, n, order="F")
+        X = w[: 6 * (n_steps + 1)].reshape(6, n_steps + 1, order="F")
+        U = w[6 * (n_steps + 1) :].reshape(2, n_steps, order="F")
         X_new = np.empty_like(X)
-        X_new[:, :n] = X[:, 1:]
-        X_new[:, n] = X[:, n]
+        X_new[:, :n_steps] = X[:, 1:]
+        X_new[:, n_steps] = X[:, n_steps]
         U_new = np.empty_like(U)
-        U_new[:, : n - 1] = U[:, 1:]
-        U_new[:, n - 1] = U[:, n - 1]
+        U_new[:, : n_steps - 1] = U[:, 1:]
+        U_new[:, n_steps - 1] = U[:, n_steps - 1]
         X_new[:, 0] = x0
         return np.concatenate([X_new.ravel(order="F"), U_new.ravel(order="F")])
