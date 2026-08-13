@@ -163,6 +163,8 @@ def simulate(
     u[n_steps] = state.u
     v[n_steps] = state.v
     r[n_steps] = state.r
+    thrust[n_steps] = actuator.thrust
+    yaw_moment[n_steps] = actuator.yaw_moment
 
     return SimulationResult(
         t=t,
