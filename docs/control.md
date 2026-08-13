@@ -98,14 +98,14 @@ Discrete-time NMPC over a receding horizon of `N = 25` steps of
 
 ```text
 min  sum_k [ q_p |p_k - p_ref,k|^2 + q_psi wrap(psi_k - psi_ref,k)^2
-             + r_t T_k^2 + r_n N_k^2 + s_t dT_k^2 + s_n dN_k^2 ]
-s.t. X_{k+1} = F(X_k, U_k)          (RK4 model, sub-stepped)
-     T_min <= T_k <= T_max          (hard actuator bounds)
-     N_min <= N_k <= N_max
-     X_0 = x_hat                    (pinned current estimate)
+             + r_t T_cmd,k^2 + r_n N_cmd,k^2 + s_t dT_cmd,k^2 + s_n dN_cmd,k^2 ]
+s.t. X_{k+1} = F(X_k, U_k)          (RK4 model, sub-stepped, 8 states)
+     T_min <= T_cmd,k <= T_max      (hard actuator bounds)
+     N_min <= N_cmd,k <= N_max
+     X_0 = (x_hat, actuator)        (pinned current state)
 ```
 
-with `dT_k = T_k - T_{k-1}` (rate cost, `T_{-1}` = last applied command).
+with `dT_cmd,k = T_cmd,k - T_cmd,k-1` (rate cost, `T_{-1}` = last command).
 The reference is a **time-parametrized trajectory** along the path:
 `p_ref,k = path(s_0 + k v_ref dt)` with `s_0 = v_ref t` (mission clock).
 This is deliberate: re-anchoring the reference at the vessel's projection each
@@ -114,26 +114,34 @@ acceleration (the vessel would cruise behind schedule).
 
 ### Prediction model
 
-The model is an independent CasADi implementation of the 3-DOF dynamics
-(docs/model.md §2-§3) — deliberately duplicated because CasADi needs symbolic
-expressions. The two implementations are cross-validated bit-closely in
-tests (max diff < 1e-8 over random states).
+The model is an independent CasADi implementation of the same equations as
+the C++ core — deliberately duplicated because CasADi needs symbolic
+expressions. The state is 8-dimensional: the vessel `(x, y, psi, u, v, r)`
+plus the actuator `(T, N)` (docs/model.md §5); the controls are the
+commanded forces. The actuator block is stepped first, then the vessel block
+with the applied forces held at their end-of-step values — the exact
+composition of the C++ reference (`actuator_step` + `rk4_step`) — which
+keeps the cross-validation test bit-tight (max diff < 1e-8 over random
+states).
 
 Each model step integrates `substeps = 2` internal RK4 steps of 0.2 s. A
 single 0.4 s step is outside RK4's stability margin for the yaw dynamics
 once the Munk coupling is active (`m33/N_r ~ 0.2 s` time constant) and
-produced exploding predictions; sub-stepping fixed it (all solves converge,
-mean 75-90 ms).
+produced exploding predictions; sub-stepping fixed it.
 
-### Initial guess
+### Solver settings and initial guesses
 
-The default initial guess is a **physical rollout**: constant drag-balance
-thrust at the current speed, zero moment. A shifted previous solution
-(``warm_start=True``) is available but is not the default: on this nonconvex
-problem it made IPOPT diverge or land in poor local minima (e.g. cruising
-slowly while the reference recedes); the physical rollout is both simpler and
-more robust. When warm start is enabled, a failed warm-started solve falls
-back to the rollout automatically.
+IPOPT runs with a relaxed tolerance (`tol = 1e-4` plus acceptable-iteration
+criteria and a 0.4 s wall-time cap): start-up and turn-transient optima are
+flat regions (the vessel cannot catch the reference within the horizon), so
+tight KKT tolerances are meaningless there and made IPOPT's dual iterates
+diverge. The wall-time cap bounds the worst case; the best iterate of a
+capped solve is used.
+
+The initial guess is, in order: the previous solution shifted by one step
+(`warm_start`, the default), the previously applied command rolled out
+through the model, and a drag-balance cruise rollout. The solver falls back
+down the list until one attempt converges (or the wall time is reached).
 
 ### Weights
 

@@ -40,7 +40,10 @@ through the dynamics (position coupling) and the other measurements.
 ## 3. Filter equations
 
 **Prediction** — the discrete state transition is the C++ RK4 kernel itself
-(no duplicated dynamics in Python):
+(no duplicated dynamics in Python). The command goes through the nominal
+actuator model first (docs/model.md §5); the resulting applied forces drive
+the vessel prediction, and the filter carries the nominal actuator state as
+a known quantity (deterministic given the command history):
 
 ```text
 x_hat^- = rk4_step(x_hat, u, env_nominal, dt)

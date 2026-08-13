@@ -21,9 +21,9 @@ sensors; the cyan line is the NMPC's 10 s predicted horizon, re-solved at
 
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation | **133 ns/step** |
-| 1000 s simulation (Python loop) | **~200 ms** |
-| NMPC mean / p95 solve time | **88 / 117 ms** (5 Hz budget) |
+| C++ RK4 propagation (vessel + actuator) | **~135 ns/step** |
+| 1000 s simulation (Python loop) | **~400 ms** |
+| NMPC mean / p95 solve time | **155 / 195 ms** (5 Hz budget) |
 
 Machine-dependent; regenerate with `python benchmarks/benchmark_simulation.py`.
 
@@ -32,16 +32,22 @@ Machine-dependent; regenerate with `python benchmarks/benchmark_simulation.py`.
 The flagship scenario: an S-curve reference path under a 0.15 m/s
 cross-current and a 3 N beam wind — both unknown to the controllers and to
 the filter. The vessel is controlled from EKF estimates only (GNSS at 5 Hz,
-compass/speed/gyro at 10 Hz, all noisy).
+compass/speed/gyro at 10 Hz, all noisy), its true dynamics differ from the
+controller model, and the commands reach the hull through a rate-limited
+actuator with response lag (docs/model.md §5).
+
+The plant runs the perturbed **truth parameters** (model mismatch) behind a
+rate-limited actuator; the controllers and the filter use the nominal model
+and never see the true state.
 
 | Metric | LOS (PID/PI) | NMPC |
 |---|---:|---:|
-| RMS cross-track error [m] | 1.45 | **1.25** |
-| Max cross-track error [m] | 2.39 | **1.73** |
-| RMS heading error [deg] | **8.1** | 10.6 |
-| RMS thrust [N] | **35.3** | 36.6 |
-| Max yaw moment [N m] | 3.4 | 6.0 |
-| Mean solve time [ms] | — | **88** |
+| RMS cross-track error [m] | 1.43 | **1.29** |
+| Max cross-track error [m] | 2.33 | **1.80** |
+| RMS heading error [deg] | **8.5** | 10.8 |
+| RMS thrust [N] | **35.4** | 37.0 |
+| Max yaw moment [N m] | 3.8 | 6.0 |
+| Mean / p95 solve time [ms] | — | **155 / 195** |
 
 NMPC tracks the path tighter at the price of more actuator activity; the LOS
 baseline is simpler and cheaper. No cherry-picked numbers: regenerate with
@@ -168,8 +174,8 @@ cmake -B build -DVESSEL_GNC_BUILD_BENCHMARKS=ON && cmake --build build
 
 ## Roadmap
 
-- actuator dynamics, truth/nominal model split, time-varying environment;
-- disturbance estimation (augmented EKF);
+- time-varying current and gust disturbances, with online current
+  estimation (augmented EKF);
 - scenario-based robust NMPC and Monte-Carlo evaluation;
 - coastal navigation environment for the flagship visual.
 

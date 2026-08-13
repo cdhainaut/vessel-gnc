@@ -67,7 +67,7 @@ def run_controller(make_policy, period: float, label: str, nmpc=None):
         ekf.predict(prev)
         ekf.observe(sensors.sample(state, t), r_cov)
         xhat = ekf.estimate
-        cmd = make_policy(t, xhat, prev, horizon_shots, solve_times)
+        cmd = make_policy(t, xhat, prev, horizon_shots, solve_times, ekf)
         prev = _core.clamp_control(cmd, params)
         return prev
 
@@ -93,7 +93,7 @@ def run_controller(make_policy, period: float, label: str, nmpc=None):
     return result, metrics, horizon_shots, solve_times
 
 
-def los_policy(t, xhat, prev, horizon_shots, solve_times):
+def los_policy(t, xhat, prev, horizon_shots, solve_times, ekf):
     path = make_s_curve_path()
     (psi_los,) = los_heading(np.array([[xhat.x, xhat.y]]), path, LOOKAHEAD)
     moment = LOS_HEADING.update(psi_los, xhat.psi, xhat.r, LOS_PERIOD)
@@ -101,12 +101,14 @@ def los_policy(t, xhat, prev, horizon_shots, solve_times):
     return _core.Control(thrust=thrust, yaw_moment=moment)
 
 
-def nmpc_policy(t, xhat, prev, horizon_shots, solve_times):
+def nmpc_policy(t, xhat, prev, horizon_shots, solve_times, ekf):
     path = make_s_curve_path()
     refs, psi_refs = path_reference(
         path, SPEED_REF * t, SPEED_REF, NMPC.config.dt, NMPC.config.horizon
     )
-    cmd = NMPC.solve(xhat, refs, psi_refs, prev)
+    # The NMPC model includes the actuator states (docs/model.md §5): the
+    # filter's nominal actuator state is the current initial condition.
+    cmd = NMPC.solve(xhat, ekf.actuator, refs, psi_refs, prev)
     solve_times.append(NMPC.last_solve_time)
     horizon_shots.append((t, NMPC.last_trajectory.copy()))  # for the hero
     return cmd

@@ -68,8 +68,10 @@ class VesselEKF:
             np.asarray(cov0 if cov0 is not None else _DEFAULT_COV0, dtype=float)
         )
         # The filter predicts with the nominal (calm) environment: it does not
-        # know the true current/wind (docs/estimation.md §3).
+        # know the true current/wind (docs/estimation.md §3). It carries the
+        # nominal actuator state as a known quantity (docs/model.md §5).
         self.environment = _core.Environment()
+        self.actuator = _core.ActuatorState()
 
     @property
     def estimate(self) -> _core.State:
@@ -84,9 +86,19 @@ class VesselEKF:
         )
 
     def predict(self, control: _core.Control) -> None:
-        """Propagate the estimate by one step (RK4 kernel + linearized covariance)."""
-        F = self._jacobian(control)
-        self.x = self._propagate(self.x, control)
+        """Propagate the estimate by one step (RK4 kernel + linearized covariance).
+
+        The command goes through the nominal actuator model; the resulting
+        applied forces drive the vessel prediction.
+        """
+        self.actuator = _core.actuator_step(
+            self.actuator, control, self.params, self.dt
+        )
+        applied = _core.Control(
+            thrust=self.actuator.thrust, yaw_moment=self.actuator.yaw_moment
+        )
+        F = self._jacobian(applied)
+        self.x = self._propagate(self.x, applied)
         self.P = F @ self.P @ F.T + np.diag(self.q)
 
     def observe(

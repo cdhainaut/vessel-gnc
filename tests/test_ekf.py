@@ -12,7 +12,9 @@ from vessel_gnc.simulation import simulate
 
 
 def test_sensor_suite_firing_schedule():
-    config = SensorConfig(gnss_period=0.2, compass_period=0.1, speed_period=0.1, gyro_period=0.1)
+    config = SensorConfig(
+        gnss_period=0.2, compass_period=0.1, speed_period=0.1, gyro_period=0.1
+    )
     suite = SensorSuite(config, np.random.default_rng(0))
     state = _core.State(x=1.0, y=2.0, psi=0.5, u=1.0, v=0.0, r=0.1)
     for t in (0.0, 0.1, 0.2, 0.3):
@@ -53,7 +55,9 @@ def _run_ekf_scenario(env, sensors, seed, duration=60.0, use_estimate=False):
     params = _core.default_params()
     rng = np.random.default_rng(seed)
     suite = SensorSuite(sensors, rng)
-    r_cov = {name: sensors.covariance(name) for name in ("gnss", "compass", "speed", "gyro")}
+    r_cov = {
+        name: sensors.covariance(name) for name in ("gnss", "compass", "speed", "gyro")
+    }
     heading = _core.HeadingController(_core.default_heading_gains())
     speed = _core.SpeedController(_core.default_speed_gains())
     ekf = VesselEKF(params, dt=0.1)
@@ -69,11 +73,15 @@ def _run_ekf_scenario(env, sensors, seed, duration=60.0, use_estimate=False):
         (psi_los,) = los_heading(np.array([[s.x, s.y]]), path, 8.0)
         moment = heading.update(psi_los, s.psi, s.r, 0.1)
         thrust = speed.update(1.3, s.u, 0.1)
-        prev_cmd = _core.clamp_control(_core.Control(thrust=thrust, yaw_moment=moment), params)
+        prev_cmd = _core.clamp_control(
+            _core.Control(thrust=thrust, yaw_moment=moment), params
+        )
         est.append((xhat.x, xhat.y))
         return prev_cmd
 
-    result = simulate(duration, 0.01, control=policy, environment=env, control_period=0.1)
+    result = simulate(
+        duration, 0.01, control=policy, environment=env, control_period=0.1
+    )
     return result, ekf, np.array(est)
 
 
@@ -81,7 +89,10 @@ def test_ekf_covariance_symmetric():
     params = _core.default_params()
     rng = np.random.default_rng(3)
     suite = SensorSuite(SensorConfig(), rng)
-    r_cov = {name: SensorConfig().covariance(name) for name in ("gnss", "compass", "speed", "gyro")}
+    r_cov = {
+        name: SensorConfig().covariance(name)
+        for name in ("gnss", "compass", "speed", "gyro")
+    }
     ekf = VesselEKF(params, dt=0.1)
     for k in range(200):  # 20 s
         state = _core.State(x=10.0 + k * 0.1, y=5.0, psi=0.3, u=1.0, v=0.0, r=0.1)
@@ -108,9 +119,14 @@ def test_ekf_no_noise_consistent():
         for name in ("gnss", "compass", "speed", "gyro")
     }
     state = _core.State(x=1.0, y=-2.0, psi=0.5)
+    truth_actuator = _core.ActuatorState()
     for _ in range(600):  # 60 s
         cmd = _core.Control(thrust=25.0, yaw_moment=0.3)
-        state = _core.rk4_step(state, cmd, _core.Environment(), params, 0.1)
+        truth_actuator = _core.actuator_step(truth_actuator, cmd, params, 0.1)
+        applied = _core.Control(
+            thrust=truth_actuator.thrust, yaw_moment=truth_actuator.yaw_moment
+        )
+        state = _core.rk4_step(state, applied, _core.Environment(), params, 0.1)
         measurements = {
             "gnss": np.array([state.x, state.y]),
             "compass": np.array([state.psi]),
@@ -119,7 +135,9 @@ def test_ekf_no_noise_consistent():
         }
         ekf.predict(cmd)
         ekf.observe(measurements, r_noiseless)
-    err = np.abs(ekf.x - np.array([state.x, state.y, state.psi, state.u, state.v, state.r]))
+    err = np.abs(
+        ekf.x - np.array([state.x, state.y, state.psi, state.u, state.v, state.r])
+    )
     assert np.max(err) < 1e-3
 
 

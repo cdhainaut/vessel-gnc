@@ -32,7 +32,8 @@ class NmpcConfig:
     r_moment: float = 1e-2  # control weight [1/(N m)^2]
     s_thrust: float = 5e-3  # control-rate weight [1/N^2]
     s_moment: float = 5e-2  # control-rate weight [1/(N m)^2]
-    warm_start: bool = False  # shifted-solution initial guess (see docs/control.md §5)
+    warm_start: bool = True  # shifted-solution initial guess, with automatic
+    # fallback to the physical rollout (see docs/control.md §5)
 
 
 class VesselNmpc:
@@ -72,6 +73,7 @@ class VesselNmpc:
     def solve(
         self,
         state: _core.State,
+        actuator: _core.ActuatorState,
         refs: np.ndarray,
         psi_refs: np.ndarray,
         u_prev: _core.Control,
@@ -79,15 +81,27 @@ class VesselNmpc:
         """Solve the NMPC problem and return the first control action.
 
         Args:
-            state: current state estimate.
+            state: current vessel state estimate.
+            actuator: current actuator state (nominal model, docs/model.md §5).
             refs: (N, 2) reference positions along the path.
             psi_refs: (N,) reference headings [rad] (path tangents).
             u_prev: previously applied control (rate-cost anchor).
         """
         n_steps = self.config.horizon
-        x0 = np.array([state.x, state.y, state.psi, state.u, state.v, state.r])
-        self.lbw[:6] = x0
-        self.ubw[:6] = x0
+        x0 = np.array(
+            [
+                state.x,
+                state.y,
+                state.psi,
+                state.u,
+                state.v,
+                state.r,
+                actuator.thrust,
+                actuator.yaw_moment,
+            ]
+        )
+        self.lbw[:8] = x0
+        self.ubw[:8] = x0
         p = np.concatenate(
             [
                 np.asarray(refs, dtype=float).ravel(),
@@ -120,8 +134,8 @@ class VesselNmpc:
 
         w = np.array(sol["x"]).ravel()
         # CasADi stores MX column-major: reshape/ravel with Fortran order.
-        self.last_trajectory = w[: 6 * (n_steps + 1)].reshape(6, n_steps + 1, order="F")
-        self.last_controls = w[6 * (n_steps + 1) :].reshape(2, n_steps, order="F")
+        self.last_trajectory = w[: 8 * (n_steps + 1)].reshape(8, n_steps + 1, order="F")
+        self.last_controls = w[8 * (n_steps + 1) :].reshape(2, n_steps, order="F")
         self.w0 = w
         return _core.Control(
             thrust=float(self.last_controls[0, 0]),
@@ -129,11 +143,16 @@ class VesselNmpc:
         )
 
     def reset(self) -> None:
-        """Drop the warm start (next solve starts from a naive guess)."""
+        """Drop all warm-start state (next solve starts from the rollout guess)."""
         self.w0 = None
+        self.last_controls = None
+        self.last_trajectory = None
 
     def model_step(self, x: np.ndarray, u: np.ndarray) -> np.ndarray:
-        """One RK4 model step (used for cross-validation against the C++ kernel)."""
+        """One RK4 model step on the 8-state model (vessel + actuator).
+
+        Used for cross-validation against the C++ kernel.
+        """
         return np.array(self.F(ca.DM(x), ca.DM(u))).ravel()
 
     # --- internals ----------------------------------------------------------
@@ -141,14 +160,17 @@ class VesselNmpc:
     def _build(self) -> None:
         cfg = self.config
         n_steps = cfg.horizon
+        cfg_min_t, cfg_max_t = self.params.thrust_min, self.params.thrust_max
+        cfg_min_m, cfg_max_m = self.params.moment_min, self.params.moment_max
 
-        # Decision variables: X (6, N+1), U (2, N).
-        x = ca.MX.sym("x", 6)
+        # Decision variables: X (8, N+1), U (2, N); the initial state X_0 is
+        # pinned by equal bounds in solve().
+        x = ca.MX.sym("x", 8)
         u = ca.MX.sym("u", 2)
         F = ca.Function("F", [x, u], [self._discrete_step(x, u)])
         self.F = F
 
-        X = ca.MX.sym("X", 6, n_steps + 1)
+        X = ca.MX.sym("X", 8, n_steps + 1)
         U = ca.MX.sym("U", 2, n_steps)
         w = ca.vertcat(ca.reshape(X, -1, 1), ca.reshape(U, -1, 1))
 
@@ -173,7 +195,15 @@ class VesselNmpc:
         g = ca.vertcat(*[X[:, k + 1] - F(X[:, k], U[:, k]) for k in range(n_steps)])
 
         opts = {
-            "ipopt": {"print_level": 0, "sb": "yes", "max_iter": 500, "tol": 1e-6},
+            "ipopt": {
+                "print_level": 0,
+                "sb": "yes",
+                "max_iter": 300,
+                "tol": 1e-4,
+                "acceptable_tol": 1e-4,
+                "acceptable_iter": 8,
+                "max_wall_time": 0.4,
+            },
             "print_time": False,
         }
         self.solver = ca.nlpsol(
@@ -183,81 +213,131 @@ class VesselNmpc:
         # Bounds: control saturation (static), initial state pinned per solve,
         # and generous state bounds (they never bind in practice but keep IPOPT
         # from exploring states where the quadratic damping overflows).
-        n_x = 6 * (n_steps + 1)
+        n_x = 8 * (n_steps + 1)
         self.lbw = np.full(n_x + 2 * n_steps, -ca.inf)
         self.ubw = np.full(n_x + 2 * n_steps, ca.inf)
-        state_lo = np.array([-1e3, -1e3, -200.0, -10.0, -10.0, -5.0])
-        state_hi = np.array([1e3, 1e3, 200.0, 10.0, 10.0, 5.0])
+        state_lo = np.array(
+            [-1e3, -1e3, -200.0, -10.0, -10.0, -5.0, cfg_min_t, cfg_min_m]
+        )
+        state_hi = np.array([1e3, 1e3, 200.0, 10.0, 10.0, 5.0, cfg_max_t, cfg_max_m])
         self.lbw[:n_x] = np.tile(state_lo, n_steps + 1)
         self.ubw[:n_x] = np.tile(state_hi, n_steps + 1)
         self.lbw[n_x::2] = self.params.thrust_min
         self.ubw[n_x::2] = self.params.thrust_max
         self.lbw[n_x + 1 :: 2] = self.params.moment_min
         self.ubw[n_x + 1 :: 2] = self.params.moment_max
-        self.lbg = np.zeros(6 * n_steps)
-        self.ubg = np.zeros(6 * n_steps)
+        self.lbg = np.zeros(8 * n_steps)
+        self.ubg = np.zeros(8 * n_steps)
         self.w0 = None
 
     def _discrete_step(self, x: ca.MX, u: ca.MX) -> ca.MX:
-        """RK4 discretization of the continuous 3-DOF dynamics.
+        """RK4 discretization of the continuous 8-state model.
 
-        Each model step integrates ``substeps`` internal RK4 steps of
-        ``dt / substeps``: the yaw dynamics are fast (time constant
-        m33/N_r ~ 0.2 s) and a single step of 0.4 s is outside RK4's
-        stability margin once the Munk coupling is active.
+        States: vessel (x, y, psi, u, v, r) plus actuator (thrust,
+        yaw_moment); controls: commanded (thrust_cmd, moment_cmd). The
+        actuator block is stepped first, then the vessel block with the
+        applied forces held at their end-of-step values — the exact same
+        composition as the C++ reference (actuator_step + rk4_step), which
+        keeps the cross-validation test bit-tight. Each block integrates
+        ``substeps`` internal RK4 steps of ``dt / substeps``: the yaw
+        dynamics are fast (time constant m33/N_r ~ 0.2 s) and a single step
+        of 0.4 s is outside RK4's stability margin once the Munk coupling is
+        active.
         """
         p = self.params
-        psi = x[2]
-        u_rel, v_rel, r_rel = x[3], x[4], x[5]  # nominal model: no current
-
-        m11 = p.mass + p.added_mass_x
-        m22 = p.mass + p.added_mass_y
-        m33 = p.inertia_z + p.added_inertia_z
-        cx = -m22 * v_rel * r_rel
-        cy = m11 * u_rel * r_rel
-        cr = (m22 - m11) * u_rel * v_rel
-        du = p.lin_damping_u * u_rel + p.quad_damping_u * ca.fabs(u_rel) * u_rel
-        dv = p.lin_damping_v * v_rel + p.quad_damping_v * ca.fabs(v_rel) * v_rel
-        dr = p.lin_damping_r * r_rel + p.quad_damping_r * ca.fabs(r_rel) * r_rel
-
-        x_dot = ca.vertcat(
-            u_rel * ca.cos(psi) - v_rel * ca.sin(psi),
-            u_rel * ca.sin(psi) + v_rel * ca.cos(psi),
-            r_rel,
-            (u[0] - cx - du) / m11,
-            (-cy - dv) / m22,
-            (u[1] - cr - dr) / m33,
-        )
-        f = ca.Function("f", [x, u], [x_dot])
         substep_dt = self.config.dt / self.config.substeps
-        xk = x
+
+        def rk4(ode: ca.Function, state: ca.MX, argument: ca.MX) -> ca.MX:
+            """One internal RK4 step of ``state_dot = ode(state, argument)``."""
+            k1 = ode(state, argument)
+            k2 = ode(state + substep_dt / 2 * k1, argument)
+            k3 = ode(state + substep_dt / 2 * k2, argument)
+            k4 = ode(state + substep_dt * k3, argument)
+            return state + substep_dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+
+        # --- Actuator block (docs/model.md §5): rate-limited first-order
+        # response, smooth tanh approximation of the rate limit (C1, keeps
+        # IPOPT fast). The command is clamped to the actuator bounds.
+        actuator_state = ca.MX.sym("actuator_state", 2)
+        thrust_cmd = ca.fmin(ca.fmax(u[0], p.thrust_min), p.thrust_max)
+        moment_cmd = ca.fmin(ca.fmax(u[1], p.moment_min), p.moment_max)
+        thrust_dot = p.thrust_rate_limit * ca.tanh(
+            (thrust_cmd - actuator_state[0])
+            / (p.thrust_time_constant * p.thrust_rate_limit)
+        )
+        moment_dot = p.moment_rate_limit * ca.tanh(
+            (moment_cmd - actuator_state[1])
+            / (p.moment_time_constant * p.moment_rate_limit)
+        )
+        actuator_dot = ca.Function(
+            "actuator_dot", [actuator_state, u], [ca.vertcat(thrust_dot, moment_dot)]
+        )
+
+        # --- Vessel block: the applied forces are the actuator states.
+        vessel_state_sym = ca.MX.sym("vessel_state", 6)
+        applied_sym = ca.MX.sym("applied", 2)
+
+        def vessel_dot(state: ca.MX, applied: ca.MX) -> ca.MX:
+            u_rel, v_rel, r_rel = state[3], state[4], state[5]
+            m11 = p.mass + p.added_mass_x
+            m22 = p.mass + p.added_mass_y
+            m33 = p.inertia_z + p.added_inertia_z
+            cx = -m22 * v_rel * r_rel
+            cy = m11 * u_rel * r_rel
+            cr = (m22 - m11) * u_rel * v_rel
+            du = p.lin_damping_u * u_rel + p.quad_damping_u * ca.fabs(u_rel) * u_rel
+            dv = p.lin_damping_v * v_rel + p.quad_damping_v * ca.fabs(v_rel) * v_rel
+            dr = p.lin_damping_r * r_rel + p.quad_damping_r * ca.fabs(r_rel) * r_rel
+            return ca.vertcat(
+                u_rel * ca.cos(state[2]) - v_rel * ca.sin(state[2]),
+                u_rel * ca.sin(state[2]) + v_rel * ca.cos(state[2]),
+                r_rel,
+                (applied[0] - cx - du) / m11,
+                (-cy - dv) / m22,
+                (applied[1] - cr - dr) / m33,
+            )
+
+        vessel_ode = ca.Function(
+            "vessel_ode",
+            [vessel_state_sym, applied_sym],
+            [vessel_dot(vessel_state_sym, applied_sym)],
+        )
+
+        # --- Compose: actuator first (end-of-step forces), then the vessel.
+        vessel_state = x[:6]
+        actuator = x[6:]
         for _ in range(self.config.substeps):
-            k1 = f(xk, u)
-            k2 = f(xk + substep_dt / 2 * k1, u)
-            k3 = f(xk + substep_dt / 2 * k2, u)
-            k4 = f(xk + substep_dt * k3, u)
-            xk = xk + substep_dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-        return xk
+            actuator = rk4(actuator_dot, actuator, u)
+            applied = ca.vertcat(actuator[0], actuator[1])
+            vessel_state = rk4(vessel_ode, vessel_state, applied)
+        return ca.vertcat(vessel_state, actuator)
 
     def _ok(self, status: str) -> bool:
         return status in ("Solve_Succeeded", "Solved_To_Acceptable_Level")
 
     def _guesses(self, x0: np.ndarray) -> list[np.ndarray]:
-        """Initial guesses in order of preference."""
+        """Initial guesses in order of preference: the previously applied
+        command (or a max-acceleration ramp on the very first solve), then a
+        drag-balance cruise. The solver falls back down the list until one
+        converges (start-up and turn transients can be hard for IPOPT)."""
+        p = self.params
+        if self.last_controls is not None:
+            primary = np.array([self.last_controls[0, 0], self.last_controls[1, 0]])
+        else:
+            primary = np.array([p.thrust_max, 0.0])  # start-up: accelerate hard
+        t_eq = p.lin_damping_u * x0[3] + p.quad_damping_u * abs(x0[3]) * x0[3]
         guesses = []
         if self.config.warm_start and self.w0 is not None:
             guesses.append(self._shifted_guess(x0))
-        guesses.append(self._rollout_guess(x0))
+        for u_const in (primary, np.array([t_eq, 0.0])):
+            if not guesses or not np.allclose(guesses[-1][:2], u_const):
+                guesses.append(self._rollout_guess(x0, u_const))
         return guesses
 
-    def _rollout_guess(self, x0: np.ndarray) -> np.ndarray:
-        """Physical guess: constant drag-balance thrust at the current speed,
-        zero moment, rolled out through the model (dynamically consistent)."""
+    def _rollout_guess(self, x0: np.ndarray, u_const: np.ndarray) -> np.ndarray:
+        """Constant-control rollout through the model (dynamically consistent)."""
         n_steps = self.config.horizon
-        p = self.params
-        t_eq = p.lin_damping_u * x0[3] + p.quad_damping_u * abs(x0[3]) * x0[3]
-        u_const = np.array([t_eq, 0.0])
-        X = np.empty((6, n_steps + 1))
+        X = np.empty((8, n_steps + 1))
         X[:, 0] = x0
         for k in range(n_steps):
             X[:, k + 1] = self.model_step(X[:, k], u_const)
@@ -269,8 +349,8 @@ class VesselNmpc:
         """Previous solution shifted by one step, with the new state pinned."""
         n_steps = self.config.horizon
         w = self.w0
-        X = w[: 6 * (n_steps + 1)].reshape(6, n_steps + 1, order="F")
-        U = w[6 * (n_steps + 1) :].reshape(2, n_steps, order="F")
+        X = w[: 8 * (n_steps + 1)].reshape(8, n_steps + 1, order="F")
+        U = w[8 * (n_steps + 1) :].reshape(2, n_steps, order="F")
         X_new = np.empty_like(X)
         X_new[:, :n_steps] = X[:, 1:]
         X_new[:, n_steps] = X[:, n_steps]

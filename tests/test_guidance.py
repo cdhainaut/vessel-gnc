@@ -16,7 +16,9 @@ from vessel_gnc.simulation import simulate
 def test_projection_on_straight_north_path():
     path = np.array([[0.0, 0.0], [100.0, 0.0]])  # heading North (x = North)
     # East of the path = starboard = negative; West = port = positive.
-    seg, along, cross = project_onto_path(np.array([[50.0, 5.0], [50.0, -5.0], [120.0, 0.0]]), path)
+    seg, along, cross = project_onto_path(
+        np.array([[50.0, 5.0], [50.0, -5.0], [120.0, 0.0]]), path
+    )
     assert np.all(seg == 0)
     assert along == pytest.approx([50.0, 50.0, 100.0])  # clamped at the end
     assert cross == pytest.approx([-5.0, 5.0, 0.0])

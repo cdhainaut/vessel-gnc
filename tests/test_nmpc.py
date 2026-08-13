@@ -22,42 +22,61 @@ def _refs(nmpc: VesselNmpc, t: float, path):
 def _run_nmpc(duration, path, env, config=None, state0=None, speed_ref=1.3, period=0.2):
     nmpc = _nmpc(config)
     prev = _core.Control()
+    actuator = _core.ActuatorState()
     solve_times = []
 
     def policy(t: float, state: _core.State) -> _core.Control:
-        nonlocal prev
+        nonlocal prev, actuator
+        # Controller-side actuator state, stepped at the control rate with the
+        # previously applied command (nominal actuator model).
+        actuator = _core.actuator_step(actuator, prev, PARAMS, period)
         refs, psi_refs = path_reference(
             path, speed_ref * t, speed_ref, nmpc.config.dt, nmpc.config.horizon
         )
-        cmd = nmpc.solve(state, refs, psi_refs, prev)
+        cmd = nmpc.solve(state, actuator, refs, psi_refs, prev)
         solve_times.append(nmpc.last_solve_time)
         prev = _core.clamp_control(cmd, PARAMS)
         return prev
 
     result = simulate(
-        duration, 0.01, control=policy, environment=env, control_period=period, state0=state0
+        duration,
+        0.01,
+        control=policy,
+        environment=env,
+        control_period=period,
+        state0=state0,
     )
     return result, nmpc, solve_times
 
 
 def test_model_matches_cpp_kernel():
-    # The CasADi prediction model must reproduce the C++ RK4 kernel (with the
-    # same internal sub-steps): this is the cross-validation of the deliberate
-    # model duplication.
+    # The CasADi prediction model (8 states: vessel + actuator) must reproduce
+    # the C++ kernel composed over the same internal sub-steps: this is the
+    # cross-validation of the deliberate model duplication.
     nmpc = _nmpc()
     rng = np.random.default_rng(0)
     h = nmpc.config.dt / nmpc.config.substeps
     worst = 0.0
     for _ in range(20):
-        x = rng.uniform([-20, -20, -3, 0.5, -0.5, -0.3], [20, 20, 3, 2, 0.5, 0.3])
+        x = rng.uniform(
+            [-20, -20, -3, 0.5, -0.5, -0.3, -10.0, -3.0],
+            [20, 20, 3, 2, 0.5, 0.3, 40.0, 3.0],
+        )
         u = rng.uniform([-10, -3], [40, 3])
         cas = nmpc.model_step(x, u)
         s = _core.State(x=x[0], y=x[1], psi=x[2], u=x[3], v=x[4], r=x[5])
+        actuator = _core.ActuatorState(thrust=x[6], yaw_moment=x[7])
         cmd = _core.Control(thrust=u[0], yaw_moment=u[1])
         env = _core.Environment()
         for _ in range(nmpc.config.substeps):
-            s = _core.rk4_step(s, cmd, env, PARAMS, h)
-        cpp = np.array([s.x, s.y, s.psi, s.u, s.v, s.r])
+            actuator = _core.actuator_step(actuator, cmd, PARAMS, h)
+            applied = _core.Control(
+                thrust=actuator.thrust, yaw_moment=actuator.yaw_moment
+            )
+            s = _core.rk4_step(s, applied, env, PARAMS, h)
+        cpp = np.array(
+            [s.x, s.y, s.psi, s.u, s.v, s.r, actuator.thrust, actuator.yaw_moment]
+        )
         worst = max(worst, float(np.max(np.abs(cas - cpp))))
     assert worst < 1e-8
 
@@ -111,9 +130,10 @@ def test_deterministic_solve():
     state = _core.State(x=10.0, y=2.0, psi=0.2, u=1.2, v=0.0, r=0.0)
     path = make_s_curve_path()
     refs, psi_refs = _refs(nmpc, 0.0, path)
-    c1 = nmpc.solve(state, refs, psi_refs, _core.Control())
+    actuator = _core.ActuatorState(thrust=20.0, yaw_moment=0.5)
+    c1 = nmpc.solve(state, actuator, refs, psi_refs, _core.Control())
     nmpc.reset()  # identical starting point for both solves
-    c2 = nmpc.solve(state, refs, psi_refs, _core.Control())
+    c2 = nmpc.solve(state, actuator, refs, psi_refs, _core.Control())
     assert c1.thrust == pytest.approx(c2.thrust, abs=1e-9)
     assert c1.yaw_moment == pytest.approx(c2.yaw_moment, abs=1e-9)
 
@@ -123,16 +143,20 @@ def test_warm_start_is_shifted_solution():
     state = _core.State(x=5.0, y=1.0, psi=0.1, u=1.2, v=0.0, r=0.0)
     path = make_s_curve_path()
     refs, psi_refs = _refs(nmpc, 0.0, path)
-    nmpc.solve(state, refs, psi_refs, _core.Control())
+    nmpc.solve(state, _core.ActuatorState(), refs, psi_refs, _core.Control())
     assert nmpc.last_trajectory is not None
-    assert nmpc.last_trajectory.shape == (6, nmpc.config.horizon + 1)
+    assert nmpc.last_trajectory.shape == (8, nmpc.config.horizon + 1)
     # The next guess is the previous solution shifted by one step, with the
     # new initial state pinned.
     moved = _core.State(x=5.3, y=1.1, psi=0.12, u=1.2, v=0.0, r=0.0)
-    w = nmpc._shifted_guess(np.array([moved.x, moved.y, moved.psi, moved.u, moved.v, moved.r]))
+    w = nmpc._shifted_guess(
+        np.array([moved.x, moved.y, moved.psi, moved.u, moved.v, moved.r, 0.0, 0.0])
+    )
     n = nmpc.config.horizon
-    X = w[: 6 * (n + 1)].reshape(6, n + 1, order="F")
-    np.testing.assert_allclose(X[:, 0], [5.3, 1.1, 0.12, 1.2, 0.0, 0.0], atol=1e-12)
+    X = w[: 8 * (n + 1)].reshape(8, n + 1, order="F")
+    np.testing.assert_allclose(
+        X[:, 0], [5.3, 1.1, 0.12, 1.2, 0.0, 0.0, 0.0, 0.0], atol=1e-12
+    )
     np.testing.assert_allclose(X[:, 1], nmpc.last_trajectory[:, 2], atol=1e-12)
-    U = w[6 * (n + 1) :].reshape(2, n, order="F")
+    U = w[8 * (n + 1) :].reshape(2, n, order="F")
     np.testing.assert_allclose(U[:, 0], nmpc.last_controls[:, 1], atol=1e-12)
