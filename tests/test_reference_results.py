@@ -171,7 +171,7 @@ def test_committed_artifacts_are_canonical_json():
 
 
 def test_artifact_types_and_schema_versions_match():
-    assert SCHEMA_VERSION == 1
+    assert SCHEMA_VERSION == 2
     for name in ARTIFACT_NAMES:
         document = _load(name)
         assert document["artifact_type"] == EXPECTED_ARTIFACT_TYPES[name]
@@ -194,6 +194,7 @@ def test_config_documents_canonical_scenario():
         "environment": "rotating_current_gusts_v1",
         "controller_los": "los_pid_v1",
         "controller_nmpc": "nominal_nmpc_v1",
+        "controller_disturbance_aware_nmpc": "disturbance_aware_nmpc_v1",
         "estimator": "augmented_current_ekf_v1",
     }
     # The committed scenario must match the current code defaults exactly.
@@ -216,7 +217,11 @@ def test_metrics_are_finite_deterministic_and_timing_free():
     assert _numbers_finite(metrics), "metrics.json must contain only finite numbers"
     timing_keys = _timing_like_keys(metrics)
     assert timing_keys == [], f"metrics.json contains timing-like keys: {timing_keys}"
-    assert set(metrics["controllers"]) == {"los_pid_v1", "nominal_nmpc_v1"}
+    assert set(metrics["controllers"]) == {
+        "los_pid_v1",
+        "nominal_nmpc_v1",
+        "disturbance_aware_nmpc_v1",
+    }
     for controller_metrics in metrics["controllers"].values():
         assert set(controller_metrics) == set(CONTROLLER_METRIC_KEYS)
         for value in controller_metrics.values():
@@ -234,7 +239,12 @@ def test_benchmark_has_required_statistics_without_timing_assertions():
     # deterministic checks).
     benchmark = _load("benchmark.json")
     workloads = benchmark["workloads"]
-    assert set(workloads) == {"kernel", "simulation", "nmpc"}
+    assert set(workloads) == {
+        "kernel",
+        "simulation",
+        "nmpc_nominal",
+        "nmpc_disturbance_aware",
+    }
 
     kernel = workloads["kernel"]
     assert kernel["name"] == "cpp_rk4_propagation"
@@ -246,24 +256,33 @@ def test_benchmark_has_required_statistics_without_timing_assertions():
     assert simulation["duration_s"] == 1000.0
     assert simulation["wall_time_ms"] > 0.0
 
-    nmpc = workloads["nmpc"]
-    assert nmpc["name"] == "nominal_s_curve_nmpc_60s"
-    assert nmpc["duration_s"] == 60.0  # distinct from the 120 s reference scenario
-    assert nmpc["control_period_s"] == 0.2  # 5 Hz control-period budget
-    assert isinstance(nmpc["samples"], int) and nmpc["samples"] > 0
-    for key in ("mean_ms", "median_ms", "p95_ms", "max_ms"):
-        assert nmpc[key] > 0.0, f"nmpc.{key} must be a positive timing value"
-    # Order invariants that hold for any non-negative sample distribution.
-    assert nmpc["median_ms"] <= nmpc["p95_ms"] <= nmpc["max_ms"]
-    assert nmpc["mean_ms"] <= nmpc["max_ms"]
-    assert isinstance(nmpc["failed_solves"], int) and nmpc["failed_solves"] >= 0
-    histogram = nmpc["final_status_histogram"]
-    assert isinstance(histogram, dict) and len(histogram) >= 1
-    assert all(isinstance(count, int) and count >= 0 for count in histogram.values())
-    assert sum(histogram.values()) == nmpc["samples"]
-    assert nmpc["failed_solves"] == sum(
-        count for status, count in histogram.items() if status not in _ACCEPTED_STATUSES
-    )
+    expected_names = {
+        "nmpc_nominal": "nominal_s_curve_nmpc_60s",
+        "nmpc_disturbance_aware": "disturbance_aware_s_curve_nmpc_60s",
+    }
+    for workload_key, expected_name in expected_names.items():
+        nmpc = workloads[workload_key]
+        assert nmpc["name"] == expected_name
+        assert nmpc["duration_s"] == 60.0
+        assert nmpc["control_period_s"] == 0.2
+        assert isinstance(nmpc["samples"], int) and nmpc["samples"] > 0
+        for key in ("mean_ms", "median_ms", "p95_ms", "max_ms"):
+            assert nmpc[key] > 0.0, f"{workload_key}.{key} must be positive"
+        assert nmpc["median_ms"] <= nmpc["p95_ms"] <= nmpc["max_ms"]
+        assert nmpc["mean_ms"] <= nmpc["max_ms"]
+        assert isinstance(nmpc["failed_solves"], int)
+        assert nmpc["failed_solves"] >= 0
+        histogram = nmpc["final_status_histogram"]
+        assert isinstance(histogram, dict) and len(histogram) >= 1
+        assert all(
+            isinstance(count, int) and count >= 0 for count in histogram.values()
+        )
+        assert sum(histogram.values()) == nmpc["samples"]
+        assert nmpc["failed_solves"] == sum(
+            count
+            for status, count in histogram.items()
+            if status not in _ACCEPTED_STATUSES
+        )
     # The benchmark artifact carries timing only: no deterministic tracking
     # metric key may appear anywhere in it.
     text = json.dumps(benchmark)

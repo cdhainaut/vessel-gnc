@@ -18,7 +18,7 @@
       "properties": {
         "$schema": { "type": "string", "description": "Path to results/reference/reference.schema.json from the repository root." },
         "artifact_type": { "const": "config" },
-        "schema_version": { "const": 1 },
+        "schema_version": { "const": 2 },
         "git_commit": { "type": "string", "description": "git rev-parse HEAD at generation time; the tree may additionally be dirty (see metadata.source_fingerprint)." },
         "scenario": { "$ref": "#/$defs/scenario" }
       }
@@ -33,16 +33,20 @@
         "truth_params", "render"
       ],
       "properties": {
-        "id": { "const": "scenario_v1_mismatch_disturbance" },
+        "id": { "const": "scenario_v2_disturbance_aware" },
         "components": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["path", "environment", "controller_los", "controller_nmpc", "estimator"],
+          "required": [
+            "path", "environment", "controller_los", "controller_nmpc",
+            "controller_disturbance_aware_nmpc", "estimator"
+          ],
           "properties": {
             "path": { "const": "s_curve_v1" },
             "environment": { "const": "rotating_current_gusts_v1" },
             "controller_los": { "const": "los_pid_v1" },
             "controller_nmpc": { "const": "nominal_nmpc_v1" },
+            "controller_disturbance_aware_nmpc": { "const": "disturbance_aware_nmpc_v1" },
             "estimator": { "const": "augmented_current_ekf_v1" }
           }
         },
@@ -227,15 +231,18 @@
       "properties": {
         "$schema": { "type": "string", "description": "Path to results/reference/reference.schema.json from the repository root." },
         "artifact_type": { "const": "metrics" },
-        "schema_version": { "const": 1 },
-        "scenario_id": { "const": "scenario_v1_mismatch_disturbance" },
+        "schema_version": { "const": 2 },
+        "scenario_id": { "const": "scenario_v2_disturbance_aware" },
         "controllers": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["los_pid_v1", "nominal_nmpc_v1"],
+          "required": [
+            "los_pid_v1", "nominal_nmpc_v1", "disturbance_aware_nmpc_v1"
+          ],
           "properties": {
             "los_pid_v1": { "$ref": "#/$defs/controllerMetrics" },
-            "nominal_nmpc_v1": { "$ref": "#/$defs/controllerMetrics" }
+            "nominal_nmpc_v1": { "$ref": "#/$defs/controllerMetrics" },
+            "disturbance_aware_nmpc_v1": { "$ref": "#/$defs/controllerMetrics" }
           }
         },
         "estimator": { "$ref": "#/$defs/estimatorMetrics" }
@@ -277,8 +284,8 @@
         "position_error_rms_m": { "type": "number", "minimum": 0, "description": "full-run RMS position estimation error [m]" },
         "position_error_max_m": { "type": "number", "minimum": 0, "description": "full-run maximum position estimation error [m]" },
         "yaw_rate_error_rms_rad_s": { "type": "number", "minimum": 0, "description": "full-run RMS yaw-rate estimation error [rad/s]" },
-        "current_error_rms_m_s": { "type": "number", "minimum": 0, "description": "RMS current-vector estimation error after the transient [m/s]" },
-        "current_error_max_m_s": { "type": "number", "minimum": 0, "description": "maximum current-vector estimation error after the transient [m/s]" },
+        "current_error_rms_m_s": { "type": "number", "minimum": 0, "description": "RMS difference between physical current and the EKF equivalent-current state after the transient [m/s]" },
+        "current_error_max_m_s": { "type": "number", "minimum": 0, "description": "maximum difference between physical current and the EKF equivalent-current state after the transient [m/s]" },
         "current_error_transient_s": { "const": 20.0, "description": "explicit transient discarded before current-error statistics [s]" }
       }
     },
@@ -289,13 +296,15 @@
       "properties": {
         "$schema": { "type": "string", "description": "Path to results/reference/reference.schema.json from the repository root." },
         "artifact_type": { "const": "benchmark" },
-        "schema_version": { "const": 1 },
-        "benchmark_id": { "type": "string" },
+        "schema_version": { "const": 2 },
+        "benchmark_id": { "const": "benchmark_v2" },
         "git_commit": { "type": "string", "description": "git rev-parse HEAD at generation time; the tree may additionally be dirty (see metadata.source_fingerprint)." },
         "workloads": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kernel", "simulation", "nmpc"],
+          "required": [
+            "kernel", "simulation", "nmpc_nominal", "nmpc_disturbance_aware"
+          ],
           "properties": {
             "kernel": {
               "type": "object",
@@ -317,31 +326,61 @@
                 "wall_time_ms": { "type": "number", "exclusiveMinimum": 0, "description": "wall time of the Python orchestration loop [ms], machine-dependent" }
               }
             },
-            "nmpc": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "name", "duration_s", "control_period_s", "samples", "mean_ms",
-                "median_ms", "p95_ms", "max_ms", "failed_solves", "final_status_histogram"
-              ],
-              "properties": {
-                "name": { "const": "nominal_s_curve_nmpc_60s" },
-                "duration_s": { "const": 60.0, "description": "benchmark workload length, distinct from the 120 s reference scenario" },
-                "control_period_s": { "const": 0.2 },
-                "samples": { "type": "integer", "exclusiveMinimum": 0 },
-                "mean_ms": { "type": "number", "exclusiveMinimum": 0 },
-                "median_ms": { "type": "number", "exclusiveMinimum": 0 },
-                "p95_ms": { "type": "number", "exclusiveMinimum": 0 },
-                "max_ms": { "type": "number", "exclusiveMinimum": 0 },
-                "failed_solves": { "type": "integer", "minimum": 0, "description": "solves whose final IPOPT status is not an accepted one" },
-                "final_status_histogram": {
+            "nmpc_nominal": {
+              "allOf": [
+                { "$ref": "#/$defs/nmpcBenchmark" },
+                {
                   "type": "object",
-                  "minProperties": 1,
-                  "additionalProperties": { "type": "integer", "minimum": 0 }
+                  "properties": {
+                    "name": { "const": "nominal_s_curve_nmpc_60s" }
+                  }
                 }
-              }
+              ]
+            },
+            "nmpc_disturbance_aware": {
+              "allOf": [
+                { "$ref": "#/$defs/nmpcBenchmark" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "name": { "const": "disturbance_aware_s_curve_nmpc_60s" }
+                  }
+                }
+              ]
             }
           }
+        }
+      }
+    },
+    "nmpcBenchmark": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name", "duration_s", "control_period_s", "samples", "mean_ms",
+        "median_ms", "p95_ms", "max_ms", "failed_solves",
+        "final_status_histogram"
+      ],
+      "properties": {
+        "name": { "type": "string" },
+        "duration_s": {
+          "const": 60.0,
+          "description": "benchmark workload length, distinct from the 120 s reference scenario"
+        },
+        "control_period_s": { "const": 0.2 },
+        "samples": { "type": "integer", "exclusiveMinimum": 0 },
+        "mean_ms": { "type": "number", "exclusiveMinimum": 0 },
+        "median_ms": { "type": "number", "exclusiveMinimum": 0 },
+        "p95_ms": { "type": "number", "exclusiveMinimum": 0 },
+        "max_ms": { "type": "number", "exclusiveMinimum": 0 },
+        "failed_solves": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "solves whose final IPOPT status is not accepted"
+        },
+        "final_status_histogram": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "integer", "minimum": 0 }
         }
       }
     },
@@ -355,7 +394,7 @@
       "properties": {
         "$schema": { "type": "string", "description": "Path to results/reference/reference.schema.json from the repository root." },
         "artifact_type": { "const": "metadata" },
-        "schema_version": { "const": 1 },
+        "schema_version": { "const": 2 },
         "generated_at_utc": { "type": "string", "format": "date-time" },
         "software": {
           "type": "object",

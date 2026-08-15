@@ -63,7 +63,8 @@ def test_short_run_records_callback_aligned_histories():
     # full callback-aligned history at every controller update.
     run = run_reference_scenario(SHORT)
     assert run.los.label == "LOS baseline"
-    assert run.nmpc.label == "NMPC"
+    assert run.nmpc.label == "Nominal NMPC"
+    assert run.disturbance_aware_nmpc.label == "Disturbance-aware NMPC"
 
     los_t = np.arange(20) * SHORT.los_period_s  # 0.0 .. 1.9 s
     nmpc_t = np.arange(10) * SHORT.nmpc_period_s  # 0.0 .. 1.8 s
@@ -71,8 +72,14 @@ def test_short_run_records_callback_aligned_histories():
     # from k * period in the last ulp: compare with a tight tolerance.
     np.testing.assert_allclose(run.los.estimator.t, los_t, atol=1e-12)
     np.testing.assert_allclose(run.nmpc.estimator.t, nmpc_t, atol=1e-12)
+    np.testing.assert_allclose(
+        run.disturbance_aware_nmpc.estimator.t,
+        nmpc_t,
+        atol=1e-12,
+    )
 
-    for controller in (run.los, run.nmpc):
+    controllers = (run.los, run.nmpc, run.disturbance_aware_nmpc)
+    for controller in controllers:
         n = len(controller.estimator.t)
         assert controller.estimator.state_true.shape == (n, 6)
         assert controller.estimator.state_estimate.shape == (n, 6)
@@ -86,20 +93,21 @@ def test_short_run_records_callback_aligned_histories():
 
     # Commands respect the physical actuator bounds (clamped per update).
     p = SHORT.nominal_params
-    for controller in (run.los, run.nmpc):
+    for controller in controllers:
         assert np.all(controller.command[:, 0] >= p.thrust_min - 1e-12)
         assert np.all(controller.command[:, 0] <= p.thrust_max + 1e-12)
         assert np.all(controller.command[:, 1] >= p.moment_min - 1e-12)
         assert np.all(controller.command[:, 1] <= p.moment_max + 1e-12)
 
     # NMPC-only records: one solve time, status and horizon per update.
-    assert run.nmpc.solve_time_s.shape == (10,)
-    assert np.all(run.nmpc.solve_time_s >= 0.0)
-    assert len(run.nmpc.solve_status) == 10
-    assert all(status for status in run.nmpc.solve_status)  # every solve ran
-    assert len(run.nmpc.horizon) == 10
-    assert run.nmpc.horizon[0][0] == pytest.approx(0.0)
-    assert run.nmpc.horizon[0][1].shape == (8, SHORT.nmpc.horizon + 1)
+    for controller in (run.nmpc, run.disturbance_aware_nmpc):
+        assert controller.solve_time_s.shape == (10,)
+        assert np.all(controller.solve_time_s >= 0.0)
+        assert len(controller.solve_status) == 10
+        assert all(controller.solve_status)  # every solve ran
+        assert len(controller.horizon) == 10
+        assert controller.horizon[0][0] == pytest.approx(0.0)
+        assert controller.horizon[0][1].shape == (8, SHORT.nmpc.horizon + 1)
 
     # LOS carries no NMPC records (empty tuples, zero solve times).
     assert run.los.solve_status == ()
@@ -108,7 +116,11 @@ def test_short_run_records_callback_aligned_histories():
 
     # Deterministic metrics are schema-shaped with callback-aligned errors.
     metrics = reference_metrics(run)
-    assert set(metrics["controllers"]) == {"los_pid_v1", "nominal_nmpc_v1"}
+    assert set(metrics["controllers"]) == {
+        "los_pid_v1",
+        "nominal_nmpc_v1",
+        "disturbance_aware_nmpc_v1",
+    }
     for controller_metrics in metrics["controllers"].values():
         assert set(controller_metrics) == set(CONTROLLER_METRIC_KEYS)
         assert all(np.isfinite(value) for value in controller_metrics.values())
@@ -135,7 +147,7 @@ def test_separate_runs_share_no_state():
     run_reference_scenario(other)
     second = run_reference_scenario(SHORT)
 
-    for controller_name in ("los", "nmpc"):
+    for controller_name in ("los", "nmpc", "disturbance_aware_nmpc"):
         first_result = getattr(first, controller_name).result
         second_result = getattr(second, controller_name).result
         for field in ("x", "y", "psi", "u", "v", "r", "thrust", "yaw_moment"):
@@ -165,20 +177,27 @@ def test_separate_runs_share_no_state():
             rtol=1e-6,
             atol=1e-6,
         )
-    # Warm start is per-run: prediction horizons agree within tolerance too.
-    for k, (_, traj) in enumerate(first.nmpc.horizon):
-        np.testing.assert_allclose(
-            traj, second.nmpc.horizon[k][1], rtol=1e-6, atol=1e-6
-        )
-    # Both runs must agree on accepted/rejected per solve, not necessarily on
-    # the raw IPOPT status string (two accepted statuses exist).
+    # Warm starts are per-run: prediction horizons agree within tolerance.
     accepted = ("Solve_Succeeded", "Solved_To_Acceptable_Level")
-    assert all(
-        (status in accepted) == (second_status in accepted)
-        for status, second_status in zip(
-            first.nmpc.solve_status, second.nmpc.solve_status, strict=True
+    for controller_name in ("nmpc", "disturbance_aware_nmpc"):
+        first_controller = getattr(first, controller_name)
+        second_controller = getattr(second, controller_name)
+        for k, (_, trajectory) in enumerate(first_controller.horizon):
+            np.testing.assert_allclose(
+                trajectory,
+                second_controller.horizon[k][1],
+                rtol=1e-6,
+                atol=1e-6,
+            )
+        # Compare accepted/rejected outcomes, not the two accepted raw strings.
+        assert all(
+            (status in accepted) == (second_status in accepted)
+            for status, second_status in zip(
+                first_controller.solve_status,
+                second_controller.solve_status,
+                strict=True,
+            )
         )
-    )
 
 
 def test_invalid_configuration_is_rejected():

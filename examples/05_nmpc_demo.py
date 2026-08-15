@@ -1,10 +1,10 @@
-"""Flagship demo: NMPC vs LOS baseline under current and wind, with EKF.
+"""Flagship: LOS vs nominal and disturbance-aware NMPC with EKF.
 
 Run from the repository root:
 
     python examples/05_nmpc_demo.py
 
-Both controllers run closed loop on EKF estimates from noisy sensors (the
+All controllers run closed loop on EKF estimates from noisy sensors (the
 plant state is never seen directly). The reference scenario, the policies,
 the estimator recording and the deterministic metrics live in
 ``vessel_gnc.reference``; this script is a thin entry point that runs the
@@ -16,7 +16,7 @@ helpers (``plot_reference_trajectories``, ``plot_controller_comparison``,
 - ``results/controller_comparison.png`` — deterministic cross-track error,
   controls and a metrics table (no timing: solve times live in
   ``results/reference/benchmark.json`` and the generated benchmark tables);
-- ``results/comparison_metrics.json`` — deterministic LOS/NMPC metrics
+- ``results/comparison_metrics.json`` — deterministic controller metrics
   (plan §13, §21);
 - ``assets/hero.gif`` — README hero animation (plan §14).
 """
@@ -53,10 +53,12 @@ def main() -> None:
     metrics = reference_metrics(run)
     los_metrics = metrics["controllers"]["los_pid_v1"]
     nmpc_metrics = metrics["controllers"]["nominal_nmpc_v1"]
+    aware_metrics = metrics["controllers"]["disturbance_aware_nmpc_v1"]
 
     for label, controller_metrics in (
         (run.los.label, los_metrics),
         (run.nmpc.label, nmpc_metrics),
+        (run.disturbance_aware_nmpc.label, aware_metrics),
     ):
         print(f"--- {label} ---")
         for key in _METRIC_ROWS:
@@ -64,7 +66,15 @@ def main() -> None:
 
     METRICS_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     METRICS_OUTPUT.write_text(
-        json.dumps({"los": los_metrics, "nmpc": nmpc_metrics}, indent=2) + "\n"
+        json.dumps(
+            {
+                "los": los_metrics,
+                "nominal_nmpc": nmpc_metrics,
+                "disturbance_aware_nmpc": aware_metrics,
+            },
+            indent=2,
+        )
+        + "\n"
     )
     print(f"wrote {METRICS_OUTPUT}")
 
@@ -74,8 +84,9 @@ def main() -> None:
     print(f"wrote {COMPARISON_OUTPUT}")
 
     if WRITE_HERO:
-        t_est = run.nmpc.estimator.t
-        current_est = run.nmpc.estimator.current_estimate
+        controller = run.disturbance_aware_nmpc
+        t_est = controller.estimator.t
+        current_est = controller.estimator.current_estimate
 
         def estimated_environment(t: float) -> _core.Environment:
             # Nearest recorded filter estimate.
@@ -88,18 +99,19 @@ def main() -> None:
 
         cfg = run.config
         animate_trajectory(
-            run.nmpc.result,
+            controller.result,
             output_path=HERO_OUTPUT,
             environment=cfg.environment.sample,
             estimated_environment=estimated_environment,
-            title="NMPC path following — predicted horizon",
+            title="Disturbance-aware NMPC — predicted horizon",
             stride=cfg.render_hero_stride_frames,
             fps=cfg.render_fps,
             wake_duration=cfg.render_hero_wake_duration_s,
             reference_path=run.path,
-            horizon=run.nmpc.horizon,
+            horizon=controller.horizon,
             horizon_label=(
-                f"NMPC prediction ({cfg.nmpc.horizon * cfg.nmpc.dt:.0f} s horizon)"
+                "disturbance-aware prediction "
+                f"({cfg.nmpc.horizon * cfg.nmpc.dt:.0f} s horizon)"
             ),
         )
         print(f"wrote {HERO_OUTPUT}")

@@ -122,14 +122,18 @@ def _synthetic_run() -> ReferenceRun:
         config=config,
         path=path,
         los=controller("LOS baseline", config.los_period_s),
-        nmpc=controller("NMPC", config.nmpc_period_s),
+        nmpc=controller("Nominal NMPC", config.nmpc_period_s),
+        disturbance_aware_nmpc=controller(
+            "Disturbance-aware NMPC",
+            config.nmpc_period_s,
+        ),
     )
 
 
 def _synthetic_benchmark() -> dict[str, object]:
     """A schema-shaped benchmark record with synthetic machine numbers."""
     return {
-        "benchmark_id": "benchmark_v1",
+        "benchmark_id": "benchmark_v2",
         "workloads": {
             "kernel": {
                 "name": "cpp_rk4_propagation",
@@ -141,7 +145,7 @@ def _synthetic_benchmark() -> dict[str, object]:
                 "duration_s": 1000.0,
                 "wall_time_ms": 42.0,
             },
-            "nmpc": {
+            "nmpc_nominal": {
                 "name": "nominal_s_curve_nmpc_60s",
                 "duration_s": 60.0,
                 "control_period_s": 0.2,
@@ -150,6 +154,18 @@ def _synthetic_benchmark() -> dict[str, object]:
                 "median_ms": 0.9,
                 "p95_ms": 1.5,
                 "max_ms": 2.0,
+                "failed_solves": 0,
+                "final_status_histogram": {"Solve_Succeeded": 10},
+            },
+            "nmpc_disturbance_aware": {
+                "name": "disturbance_aware_s_curve_nmpc_60s",
+                "duration_s": 60.0,
+                "control_period_s": 0.2,
+                "samples": 10,
+                "mean_ms": 1.1,
+                "median_ms": 1.0,
+                "p95_ms": 1.6,
+                "max_ms": 2.1,
                 "failed_solves": 0,
                 "final_status_histogram": {"Solve_Succeeded": 10},
             },
@@ -244,7 +260,11 @@ def test_metrics_artifact_has_no_timing_keys_and_exact_key_sets(tmp_path):
     assert metrics["artifact_type"] == "metrics"
     assert metrics["schema_version"] == SCHEMA_VERSION
     assert metrics["scenario_id"] == SCENARIO_ID
-    assert set(metrics["controllers"]) == {"los_pid_v1", "nominal_nmpc_v1"}
+    assert set(metrics["controllers"]) == {
+        "los_pid_v1",
+        "nominal_nmpc_v1",
+        "disturbance_aware_nmpc_v1",
+    }
     for controller in metrics["controllers"].values():
         assert set(controller) == set(CONTROLLER_METRIC_KEYS)
     assert set(metrics["estimator"]) == set(ESTIMATOR_METRIC_KEYS)
@@ -503,6 +523,7 @@ def test_verify_determinism_accepts_1e8_nmpc_and_estimator_deviation(
         # tolerance (rtol=1e-6, atol=1e-6).
         fresh = json.loads(metrics_path.read_text())
         fresh["controllers"]["nominal_nmpc_v1"]["cross_track_rms_m"] += 1e-8
+        fresh["controllers"]["disturbance_aware_nmpc_v1"]["cross_track_rms_m"] += 1e-8
         fresh["estimator"]["position_error_rms_m"] += 1e-8
         return fresh
 

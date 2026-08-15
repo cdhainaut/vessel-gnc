@@ -52,11 +52,11 @@ Status legend:
 
 | Case | Status | Location |
 |---|---|---|
-| CasADi 8-state model vs C++ (actuator + vessel, cross-validation of the duplication) | verified | `tests/test_nmpc.py` |
+| CasADi 8-state model vs C++ with current/wind (actuator + vessel) | verified | `tests/test_nmpc.py` (max diff < 1e-8) |
 | Actuator bounds respected, straight-line tracking | verified | `tests/test_nmpc.py` |
 | S-curve regression with unknown current/wind | validated | `tests/test_nmpc.py` |
 | Solve-time budget, determinism, warm-start shift | verified | `tests/test_nmpc.py` |
-| Flagship comparison (NMPC vs LOS, EKF in the loop) | validated | `results/reference/metrics.json` (scenario `scenario_v1_mismatch_disturbance`) |
+| Flagship LOS vs nominal/aware NMPC, EKF in the loop | validated | `results/reference/metrics.json` (scenario `scenario_v2_disturbance_aware`) |
 
 ## Performance
 
@@ -69,11 +69,12 @@ metrics.
 <!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **632.5 ns/step** |
-| 1000 s simulation (Python loop) | **475 ms** |
-| NMPC mean / p95 / max solve time [ms] | **142.7 / 196.0 / 268.3** |
+| C++ RK4 propagation (vessel + actuator) | **578.2 ns/step** |
+| 1000 s simulation (Python loop) | **453 ms** |
+| Nominal NMPC mean / p95 / max [ms] | **23.9 / 33.9 / 77.0** |
+| Disturbance-aware NMPC mean / p95 / max [ms] | **22.5 / 31.0 / 40.8** |
 
-Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v1`, 300 samples, 0 failed solves). The 5 Hz NMPC control period corresponds to a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
+Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v2`, 600 samples, 0 failed solves). The 5 Hz NMPC control period corresponds to a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
 
 <!-- generated:reference-benchmark-v1:end -->
 
@@ -86,18 +87,18 @@ Scenario, seed, configuration, source revision and fingerprint:
 <!-- generated:reference-provenance-v1:start -->
 | Item | Value |
 |---|---|
-| Scenario | `scenario_v1_mismatch_disturbance` (revision 1) |
+| Scenario | `scenario_v2_disturbance_aware` (revision 1) |
 | Seed | 42 |
 | Duration / integration step | 120.0 s / 0.01 s |
-| Controllers | `los_pid_v1` · `nominal_nmpc_v1` |
+| Controllers | `los_pid_v1` · `nominal_nmpc_v1` · `disturbance_aware_nmpc_v1` |
 | Estimator | `augmented_current_ekf_v1` |
-| Schema | `results/reference/reference.schema.json` (version 1) |
+| Schema | `results/reference/reference.schema.json` (version 2) |
 | Deterministic metrics | `results/reference/metrics.json` |
 | Machine-dependent benchmark | `results/reference/benchmark.json` |
-| Generated at (UTC) | 2026-08-15T09:00:29+00:00 |
-| Source commit | `aca57d8391217ff7628a5203d220a39344dfc48d` |
-| Source fingerprint | dirty: true · `32c6370aaabcb17f0de1f6ea2bbe9cb50721a74da59b79139a34e549ab063cb2` |
+| Generated at (UTC) | 2026-08-15T09:44:51+00:00 |
+| Source commit | `53e0958039310f59f44ec2b7be4a840dd0e882d2` |
+| Source fingerprint | dirty: true · `4f7198bfe08cf9b7118c779a77d1fab84dd61c8cba8506322cb17b34624aa414` |
 
-`git_commit` and the `dirty` flag record the repository state at generation time; the source fingerprint is content-based and authoritative. After committing source changes, either regenerate the artifacts (`python tools/generate_reference_results.py`) or keep the source contents unchanged: `--check` compares only the content fingerprint, so a clean checkout at a new commit passes when the source contents are unchanged and fails when they changed. `--check` validates schema, scenario, source fingerprint, artifact hashes and marker bodies without any simulation; `--verify-determinism` runs one fresh 120 s reference and compares it with `results/reference/metrics.json`: the LOS baseline metrics exactly, and the NMPC/estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its full-precision iterates may differ in the last ulps), reporting the worst offending key and deviation on failure. Reproducibility is guaranteed within the software environment recorded in `metadata.json` (`software` block): regenerating in another environment requires a fresh `--verify-determinism` in that environment before the committed metrics can be trusted.
+`git_commit` and the `dirty` flag record the repository state at generation time; the source fingerprint is content-based and authoritative. After committing source changes, either regenerate the artifacts (`python tools/generate_reference_results.py`) or keep the source contents unchanged: `--check` compares only the content fingerprint, so a clean checkout at a new commit passes when the source contents are unchanged and fails when they changed. `--check` validates schema, scenario, source fingerprint, artifact hashes and marker bodies without any simulation; `--verify-determinism` runs one fresh 120 s reference and compares it with `results/reference/metrics.json`: the LOS baseline metrics exactly, and both NMPC variants plus estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its full-precision iterates may differ in the last ulps), reporting the worst offending key and deviation on failure. Reproducibility is guaranteed within the software environment recorded in `metadata.json` (`software` block): regenerating in another environment requires a fresh `--verify-determinism` in that environment before the committed metrics can be trusted.
 
 <!-- generated:reference-provenance-v1:end -->

@@ -99,7 +99,7 @@ Discrete-time NMPC over a receding horizon of `N = 25` steps of
 ```text
 min  sum_k [ q_p |p_k - p_ref,k|^2 + q_psi wrap(psi_k - psi_ref,k)^2
              + r_t T_cmd,k^2 + r_n N_cmd,k^2 + s_t dT_cmd,k^2 + s_n dN_cmd,k^2 ]
-s.t. X_{k+1} = F(X_k, U_k)          (RK4 model, sub-stepped, 8 states)
+s.t. X_{k+1} = F(X_k, U_k, d_hat)   (RK4 model, sub-stepped, 8 states)
      T_min <= T_cmd,k <= T_max      (hard actuator bounds)
      N_min <= N_cmd,k <= N_max
      X_0 = (x_hat, actuator)        (pinned current state)
@@ -114,6 +114,19 @@ acceleration (the vessel would cruise behind schedule).
 
 ### Prediction model
 
+`VesselNmpc.solve(..., disturbance_estimate=...)` exposes the disturbance
+explicitly. Nominal NMPC passes `None`, which is exactly zero current/force.
+The disturbance-aware variant passes the EKF equivalent-current state and
+holds it constant over the 10 s finite horizon:
+
+```text
+d_hat(k + j) = d_hat(k),  j = 0 ... N
+```
+
+This zero-order-hold assumption is deliberate: the filter estimates a slowly
+varying state, not a future disturbance trajectory. No truth environment is
+available to the controller.
+
 The model is an independent CasADi implementation of the same equations as
 the C++ core — deliberately duplicated because CasADi needs symbolic
 expressions. The state is 8-dimensional: the vessel `(x, y, psi, u, v, r)`
@@ -122,7 +135,9 @@ commanded forces. The actuator block is stepped first, then the vessel block
 with the applied forces held at their end-of-step values — the exact
 composition of the C++ reference (`actuator_step` + `rk4_step`) — which
 keeps the cross-validation test bit-tight (max diff < 1e-8 over random
-states).
+states with non-zero inertial current and wind). Kinematics use absolute
+body velocity, while Coriolis/damping use relative water velocity and retain
+the rotating-body current transport term from docs/model.md §3.
 
 Each model step integrates `substeps = 2` internal RK4 steps of 0.2 s. A
 single 0.4 s step is outside RK4's stability margin for the yaw dynamics
@@ -137,6 +152,9 @@ flat regions (the vessel cannot catch the reference within the horizon), so
 tight KKT tolerances are meaningless there and made IPOPT's dual iterates
 diverge. The wall-time cap bounds the worst case; the best iterate of a
 capped solve is used.
+
+The NLP graph is expanded once by CasADi (`expand=True`), which removes the
+runtime overhead of nested symbolic functions without changing the equations.
 
 The initial guess is, in order: the previous solution shifted by one step
 (`warm_start`, the default), the previously applied command rolled out
@@ -178,7 +196,7 @@ Automated in `tests/test_nmpc.py`:
 
 | Case | Method | Result |
 |---|---|---|
-| Model consistency | CasADi model vs C++ RK4 kernel, 20 random states | max diff < 1e-8 |
+| Model consistency | CasADi vs C++ RK4, 20 random states, non-zero current/wind | max diff < 1e-8 |
 | Constraints | Closed-loop run: all commands within actuator bounds | Pass |
 | Straight-line tracking | Calm water: converges to cruise, no lateral drift | Pass |
 | S-curve regression | Current + wind (unknown to the NMPC), 60 s | RMS cross-track < 1 m, max < 3 m |
@@ -188,8 +206,9 @@ Automated in `tests/test_nmpc.py`:
 
 ## 6. Flagship reference metrics
 
-The flagship scenario (`scenario_v1_mismatch_disturbance`, revision 1,
-seed 42) runs both controllers closed loop on EKF estimates for 120.0 s at
+The flagship scenario (`scenario_v2_disturbance_aware`, revision 1,
+seed 42) runs LOS, nominal NMPC and disturbance-aware NMPC closed loop on
+EKF estimates for 120.0 s at
 0.01 s integration (controller periods 0.1 s / 0.2 s). The plant uses the
 perturbed truth parameters behind the rate-limited actuator; the environment
 is the rotating current with gusts. The metrics are computed from the
@@ -200,40 +219,39 @@ below are deterministic and formatted from `results/reference/metrics.json`;
 solve times are machine-dependent and reported only in the benchmark table.
 
 <!-- generated:reference-controller-comparison-v1:start -->
-| Metric | LOS (PID/PI) | NMPC |
-|---|---:|---:|
-| RMS cross-track error [m] | 0.68 | 0.44 |
-| P95 cross-track error [m] | 0.98 | 0.69 |
-| Max cross-track error [m] | 1.37 | 0.80 |
-| RMS wrapped heading error [deg] | 6.3 | 10.2 |
-| Max wrapped heading error [deg] | 17.6 | 27.2 |
-| RMS applied thrust [N] | 31.8 | 32.7 |
-| Max applied thrust [N] | 38.1 | 58.9 |
-| RMS applied yaw moment [N m] | 1.3 | 2.1 |
-| Max applied yaw moment [N m] | 3.3 | 6.0 |
-| Thrust saturation duration [s] | 0.0 | 0.0 |
-| Yaw-moment saturation duration [s] | 0.0 | 1.8 |
-| Either channel saturated [s] | 0.0 | 1.8 |
+| Metric | LOS (PID/PI) | Nominal NMPC | Aware NMPC |
+|---|---:|---:|---:|
+| RMS cross-track error [m] | 0.68 | 0.44 | 0.26 |
+| P95 cross-track error [m] | 0.98 | 0.69 | 0.58 |
+| Max cross-track error [m] | 1.37 | 0.80 | 0.76 |
+| RMS wrapped heading error [deg] | 6.3 | 10.2 | 10.4 |
+| Max wrapped heading error [deg] | 17.6 | 27.2 | 28.4 |
+| RMS applied thrust [N] | 31.8 | 32.7 | 32.4 |
+| Max applied thrust [N] | 38.1 | 58.9 | 58.8 |
+| RMS applied yaw moment [N m] | 1.3 | 2.1 | 2.2 |
+| Max applied yaw moment [N m] | 3.3 | 6.0 | 5.8 |
+| Thrust saturation duration [s] | 0.0 | 0.0 | 0.0 |
+| Yaw-moment saturation duration [s] | 0.0 | 1.8 | 0.0 |
+| Either channel saturated [s] | 0.0 | 1.8 | 0.0 |
 
-Deterministic flagship metrics formatted from `results/reference/metrics.json` (scenario `scenario_v1_mismatch_disturbance`, revision 1, seed 42, 120.0 s at 0.01 s integration). Saturation counts left-closed intervals whose applied value lies within 1% of a `ModelParams` bound span (docs/validation.md). No wall-clock timing appears here: NMPC solve times are machine-dependent and reported separately in the benchmark table.
+Deterministic flagship metrics formatted from `results/reference/metrics.json` (scenario `scenario_v2_disturbance_aware`, revision 1, seed 42, 120.0 s at 0.01 s integration). Saturation counts left-closed intervals whose applied value lies within 1% of a `ModelParams` bound span (docs/validation.md). No wall-clock timing appears here: NMPC solve times are machine-dependent and reported separately in the benchmark table.
 
 <!-- generated:reference-controller-comparison-v1:end -->
 
 ## 7. Known limitations
 
-- **No current compensation**: LOS guidance alone does not counteract a
-  mean current; the vessel settles with a small cross-track offset
-  (`~ Delta * V_c / u` on straight segments) and crabs. This is intentional:
-  it is the baseline that NMPC will be compared against (plan §13).
+- **No current compensation in LOS**: geometric LOS alone does not counteract
+  mean current; it remains the simple baseline.
 - Single speed reference along the whole path (no speed scheduling).
 - The heading loop does not know the path curvature (no feed-forward yaw
   rate); corners are cut by roughly the lookahead distance.
-- NMPC predicts with the nominal calm-water model: the mean current is not
-  predicted (planned extension, plan §12), so a residual crab remains.
+- Nominal NMPC predicts with zero disturbance; disturbance-aware NMPC holds
+  the EKF equivalent-current estimate constant over the horizon. Neither
+  predicts future gust evolution.
 - NMPC has no obstacle constraints and no terminal cost (10 s horizon is long
   relative to the vessel dynamics).
-- Actuator rate limits are not modelled (docs/model.md §5); the NMPC rate
-  cost is a soft proxy.
+- Both NMPC variants retain mission-clock trajectory tracking; geometric
+  predictive path following is deferred to the documented MPCC extension.
 
 ## 8. Validation record
 

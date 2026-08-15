@@ -109,22 +109,22 @@ Automated in `tests/test_ekf.py`:
 | Physical-current estimation | Exact nominal plant/filter, rotating current, no wind, 120 s | Post-transient RMS current error < 60 mm/s (seed 7) |
 | Combined-uncertainty tracking | LOS + PID on EKF estimates, current + wind unknown, 120 s | RMS position error < 3 m, max < 6 m |
 
-The flagship scenario (`scenario_v1_mismatch_disturbance`, revision 1,
+The flagship scenario (`scenario_v2_disturbance_aware`, revision 1,
 seed 42) records the callback-aligned EKF estimates of the NMPC reference
-run. The deterministic estimator errors below are formatted from
+disturbance-aware run. The deterministic estimator errors below are formatted from
 `results/reference/metrics.json`; current-vector statistics discard the
 explicit 20.0 s transient.
 
 <!-- generated:reference-estimator-v1:start -->
 | Metric | Value |
 |---|---:|
-| Position error RMS [m] | 0.16 |
+| Position error RMS [m] | 0.17 |
 | Position error max [m] | 0.43 |
 | Yaw-rate error RMS [rad/s] | 0.008 |
 | Equivalent-current difference RMS [m/s] (after 20.0 s transient) | 0.090 |
-| Equivalent-current difference max [m/s] (after 20.0 s transient) | 0.175 |
+| Equivalent-current difference max [m/s] (after 20.0 s transient) | 0.174 |
 
-Estimator errors of the NMPC reference run, computed from the callback-aligned true/estimated records and formatted from `results/reference/metrics.json` (scenario `scenario_v1_mismatch_disturbance`, seed 42). In this combined-uncertainty run the augmented state is an equivalent-current proxy: wind gusts and model mismatch can shift it away from the physical current. The difference reported here quantifies that confounding (docs/estimation.md §5); the isolated current-only validation is reported separately.
+Estimator errors of the NMPC reference run, computed from the callback-aligned true/estimated records and formatted from `results/reference/metrics.json` (scenario `scenario_v2_disturbance_aware`, seed 42). In this combined-uncertainty run the augmented state is an equivalent-current proxy: wind gusts and model mismatch can shift it away from the physical current. The difference reported here quantifies that confounding (docs/estimation.md §5); the isolated current-only validation is reported separately.
 
 <!-- generated:reference-estimator-v1:end -->
 

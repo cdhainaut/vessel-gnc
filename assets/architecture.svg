@@ -25,9 +25,9 @@
 
   <!-- NMPC (nominal params) -->
   <rect x="300" y="108" width="170" height="56" rx="8" fill="#eaf3ff" stroke="#2b6cb0" stroke-width="1.5"/>
-  <text x="385" y="130" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">NMPC</text>
-  <text x="385" y="148" text-anchor="middle" font-size="11" fill="#2b6cb0">CasADi · IPOPT · 5 Hz</text>
-  <text x="385" y="162" text-anchor="middle" font-size="10" fill="#2b6cb0">nominal params</text>
+  <text x="385" y="130" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">NMPC variants</text>
+  <text x="385" y="148" text-anchor="middle" font-size="11" fill="#2b6cb0">nominal · disturbance-aware</text>
+  <text x="385" y="162" text-anchor="middle" font-size="10" fill="#2b6cb0">CasADi · IPOPT · nominal params</text>
 
   <!-- Actuator dynamics (C++ core) -->
   <rect x="540" y="56" width="150" height="64" rx="8" fill="#fff4e6" stroke="#c05621" stroke-width="1.5"/>
@@ -93,11 +93,17 @@
   <text x="397" y="376" font-size="11" fill="#4a5568">noisy measurements</text>
 
   <!-- ============ Arrows: EKF -> LOS/NMPC (state estimate feedback) ============ -->
-  <path d="M 286 452 L 286 74 L 296 74" fill="none" stroke="#2b6cb0" stroke-width="1.5"
+  <path d="M 300 452 L 286 452 L 286 74 L 296 74" fill="none" stroke="#2b6cb0" stroke-width="1.5"
         marker-end="url(#arrow-blue)"/>
-  <path d="M 286 452 L 286 148 L 296 148" fill="none" stroke="#2b6cb0" stroke-width="1.5"
+  <path d="M 300 452 L 286 452 L 286 148 L 296 148" fill="none" stroke="#2b6cb0" stroke-width="1.5"
         marker-end="url(#arrow-blue)"/>
   <text x="276" y="300" text-anchor="end" font-size="12" fill="#2b6cb0">estimated state x̂</text>
+
+  <!-- Equivalent-current estimate enters only the disturbance-aware NMPC variant -->
+  <path d="M 470 452 L 506 452 L 506 154 L 474 154" fill="none" stroke="#2b6cb0"
+        stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow-blue)"/>
+  <text x="520" y="310" text-anchor="middle" font-size="11" fill="#2b6cb0"
+        transform="rotate(-90 520 310)">equiv. current → aware NMPC</text>
 
   <!-- ============ Legend ============ -->
   <rect x="60" y="516" width="18" height="14" rx="3" fill="#eaf3ff" stroke="#2b6cb0" stroke-width="1.2"/>

@@ -47,21 +47,15 @@ class VesselNmpc:
     Args:
         params: vessel model parameters (also provide the control bounds).
         config: horizon, weights and model step.
-        environment: nominal environment for the prediction model (default:
-            calm; the filter/controller does not know the true disturbances).
     """
 
     def __init__(
         self,
         params: _core.ModelParams,
         config: NmpcConfig | None = None,
-        environment: _core.Environment | None = None,
     ):
         self.params = params
         self.config = config if config is not None else NmpcConfig()
-        self.environment = (
-            environment if environment is not None else _core.Environment()
-        )
         self.last_solve_time = 0.0  # [s]
         self.last_status = ""
         self.last_trajectory: np.ndarray | None = None  # (6, N+1)
@@ -77,6 +71,8 @@ class VesselNmpc:
         refs: np.ndarray,
         psi_refs: np.ndarray,
         u_prev: _core.Control,
+        *,
+        disturbance_estimate: _core.Environment | None = None,
     ) -> _core.Control:
         """Solve the NMPC problem and return the first control action.
 
@@ -86,6 +82,9 @@ class VesselNmpc:
             refs: (N, 2) reference positions along the path.
             psi_refs: (N,) reference headings [rad] (path tangents).
             u_prev: previously applied control (rate-cost anchor).
+            disturbance_estimate: inertial current-equivalent velocity and
+                optional force estimate, assumed constant over the prediction
+                horizon. ``None`` gives the nominal calm-water model.
         """
         n_steps = self.config.horizon
         x0 = np.array(
@@ -102,11 +101,13 @@ class VesselNmpc:
         )
         self.lbw[:8] = x0
         self.ubw[:8] = x0
+        disturbance = self._environment_vector(disturbance_estimate)
         p = np.concatenate(
             [
                 np.asarray(refs, dtype=float).ravel(),
                 psi_refs,
                 [u_prev.thrust, u_prev.yaw_moment],
+                disturbance,
             ]
         )
 
@@ -116,7 +117,7 @@ class VesselNmpc:
         # Initial guess: shifted previous solution when warm start is enabled,
         # with automatic fallback to the physical rollout (a shifted guess can
         # make IPOPT diverge on this nonconvex problem, see docs/control.md §5).
-        for guess in self._guesses(x0):
+        for guess in self._guesses(x0, disturbance):
             sol = self.solver(
                 x0=guess,
                 lbx=self.lbw,
@@ -159,12 +160,24 @@ class VesselNmpc:
         """
         return self._ok(self.last_status)
 
-    def model_step(self, x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    def model_step(
+        self,
+        x: np.ndarray,
+        u: np.ndarray,
+        disturbance_estimate: _core.Environment | None = None,
+    ) -> np.ndarray:
         """One RK4 model step on the 8-state model (vessel + actuator).
 
-        Used for cross-validation against the C++ kernel.
+        Args:
+            x: vessel plus actuator state, shape ``(8,)``.
+            u: commanded thrust and yaw moment, shape ``(2,)``.
+            disturbance_estimate: constant inertial environment over the step.
+
+        Returns:
+            The propagated 8-state vector, cross-validatable against C++.
         """
-        return np.array(self.F(ca.DM(x), ca.DM(u))).ravel()
+        disturbance = self._environment_vector(disturbance_estimate)
+        return np.array(self.F(ca.DM(x), ca.DM(u), ca.DM(disturbance))).ravel()
 
     # --- internals ----------------------------------------------------------
 
@@ -178,18 +191,24 @@ class VesselNmpc:
         # pinned by equal bounds in solve().
         x = ca.MX.sym("x", 8)
         u = ca.MX.sym("u", 2)
-        F = ca.Function("F", [x, u], [self._discrete_step(x, u)])
+        disturbance = ca.MX.sym("disturbance", 4)
+        F = ca.Function(
+            "F",
+            [x, u, disturbance],
+            [self._discrete_step(x, u, disturbance)],
+        )
         self.F = F
 
         X = ca.MX.sym("X", 8, n_steps + 1)
         U = ca.MX.sym("U", 2, n_steps)
         w = ca.vertcat(ca.reshape(X, -1, 1), ca.reshape(U, -1, 1))
 
-        # Parameters: reference positions/headings and the previous control.
+        # Parameters: reference positions/headings, previous control and the
+        # constant-over-horizon disturbance estimate [current N/E, force N/E].
         refs = ca.MX.sym("refs", 2, n_steps)
         psi_refs = ca.MX.sym("psi_refs", n_steps)
         u_prev = ca.MX.sym("u_prev", 2)
-        p = ca.vertcat(ca.reshape(refs, -1, 1), psi_refs, u_prev)
+        p = ca.vertcat(ca.reshape(refs, -1, 1), psi_refs, u_prev, disturbance)
 
         # Stage cost (docs/control.md §5).
         cost = 0.0
@@ -203,9 +222,12 @@ class VesselNmpc:
             cost += cfg.s_thrust * du[0] ** 2 + cfg.s_moment * du[1] ** 2
 
         # Dynamics constraints: X_{k+1} = F(X_k, U_k).
-        g = ca.vertcat(*[X[:, k + 1] - F(X[:, k], U[:, k]) for k in range(n_steps)])
+        g = ca.vertcat(
+            *[X[:, k + 1] - F(X[:, k], U[:, k], disturbance) for k in range(n_steps)]
+        )
 
         opts = {
+            "expand": True,
             "ipopt": {
                 "print_level": 0,
                 "sb": "yes",
@@ -241,7 +263,12 @@ class VesselNmpc:
         self.ubg = np.zeros(8 * n_steps)
         self.w0 = None
 
-    def _discrete_step(self, x: ca.MX, u: ca.MX) -> ca.MX:
+    def _discrete_step(
+        self,
+        x: ca.MX,
+        u: ca.MX,
+        disturbance: ca.MX,
+    ) -> ca.MX:
         """RK4 discretization of the continuous 8-state model.
 
         States: vessel (x, y, psi, u, v, r) plus actuator (thrust,
@@ -286,10 +313,20 @@ class VesselNmpc:
 
         # --- Vessel block: the applied forces are the actuator states.
         vessel_state_sym = ca.MX.sym("vessel_state", 6)
-        applied_sym = ca.MX.sym("applied", 2)
+        vessel_input_sym = ca.MX.sym("vessel_input", 6)
 
-        def vessel_dot(state: ca.MX, applied: ca.MX) -> ca.MX:
-            u_rel, v_rel, r_rel = state[3], state[4], state[5]
+        def vessel_dot(state: ca.MX, vessel_input: ca.MX) -> ca.MX:
+            applied = vessel_input[:2]
+            environment = vessel_input[2:]
+            cos_psi = ca.cos(state[2])
+            sin_psi = ca.sin(state[2])
+            current_u = cos_psi * environment[0] + sin_psi * environment[1]
+            current_v = -sin_psi * environment[0] + cos_psi * environment[1]
+            wind_u = cos_psi * environment[2] + sin_psi * environment[3]
+            wind_v = -sin_psi * environment[2] + cos_psi * environment[3]
+            u_rel = state[3] - current_u
+            v_rel = state[4] - current_v
+            r_rel = state[5]
             m11 = p.mass + p.added_mass_x
             m22 = p.mass + p.added_mass_y
             m33 = p.inertia_z + p.added_inertia_z
@@ -299,19 +336,21 @@ class VesselNmpc:
             du = p.lin_damping_u * u_rel + p.quad_damping_u * ca.fabs(u_rel) * u_rel
             dv = p.lin_damping_v * v_rel + p.quad_damping_v * ca.fabs(v_rel) * v_rel
             dr = p.lin_damping_r * r_rel + p.quad_damping_r * ca.fabs(r_rel) * r_rel
+            current_transport_u = r_rel * current_v
+            current_transport_v = -r_rel * current_u
             return ca.vertcat(
-                u_rel * ca.cos(state[2]) - v_rel * ca.sin(state[2]),
-                u_rel * ca.sin(state[2]) + v_rel * ca.cos(state[2]),
+                state[3] * cos_psi - state[4] * sin_psi,
+                state[3] * sin_psi + state[4] * cos_psi,
                 r_rel,
-                (applied[0] - cx - du) / m11,
-                (-cy - dv) / m22,
+                current_transport_u + (applied[0] + wind_u - cx - du) / m11,
+                current_transport_v + (wind_v - cy - dv) / m22,
                 (applied[1] - cr - dr) / m33,
             )
 
         vessel_ode = ca.Function(
             "vessel_ode",
-            [vessel_state_sym, applied_sym],
-            [vessel_dot(vessel_state_sym, applied_sym)],
+            [vessel_state_sym, vessel_input_sym],
+            [vessel_dot(vessel_state_sym, vessel_input_sym)],
         )
 
         # --- Compose: actuator first (end-of-step forces), then the vessel.
@@ -319,14 +358,38 @@ class VesselNmpc:
         actuator = x[6:]
         for _ in range(self.config.substeps):
             actuator = rk4(actuator_dot, actuator, u)
-            applied = ca.vertcat(actuator[0], actuator[1])
-            vessel_state = rk4(vessel_ode, vessel_state, applied)
+            vessel_input = ca.vertcat(actuator[0], actuator[1], disturbance)
+            vessel_state = rk4(vessel_ode, vessel_state, vessel_input)
         return ca.vertcat(vessel_state, actuator)
+
+    @staticmethod
+    def _environment_vector(
+        environment: _core.Environment | None,
+    ) -> np.ndarray:
+        """Convert an optional environment estimate to the NLP parameter vector."""
+        if environment is None:
+            return np.zeros(4)
+        values = np.array(
+            [
+                environment.current_north,
+                environment.current_east,
+                environment.wind_north,
+                environment.wind_east,
+            ],
+            dtype=float,
+        )
+        if not np.all(np.isfinite(values)):
+            raise ValueError("disturbance_estimate must contain finite values")
+        return values
 
     def _ok(self, status: str) -> bool:
         return status in ("Solve_Succeeded", "Solved_To_Acceptable_Level")
 
-    def _guesses(self, x0: np.ndarray) -> list[np.ndarray]:
+    def _guesses(
+        self,
+        x0: np.ndarray,
+        disturbance: np.ndarray,
+    ) -> list[np.ndarray]:
         """Initial guesses in order of preference: the previously applied
         command (or a max-acceleration ramp on the very first solve), then a
         drag-balance cruise. The solver falls back down the list until one
@@ -336,22 +399,36 @@ class VesselNmpc:
             primary = np.array([self.last_controls[0, 0], self.last_controls[1, 0]])
         else:
             primary = np.array([p.thrust_max, 0.0])  # start-up: accelerate hard
-        t_eq = p.lin_damping_u * x0[3] + p.quad_damping_u * abs(x0[3]) * x0[3]
+        cos_psi = np.cos(x0[2])
+        sin_psi = np.sin(x0[2])
+        current_u = cos_psi * disturbance[0] + sin_psi * disturbance[1]
+        relative_surge = x0[3] - current_u
+        t_eq = (
+            p.lin_damping_u * relative_surge
+            + p.quad_damping_u * abs(relative_surge) * relative_surge
+        )
         guesses = []
         if self.config.warm_start and self.w0 is not None:
             guesses.append(self._shifted_guess(x0))
         for u_const in (primary, np.array([t_eq, 0.0])):
             if not guesses or not np.allclose(guesses[-1][:2], u_const):
-                guesses.append(self._rollout_guess(x0, u_const))
+                guesses.append(self._rollout_guess(x0, u_const, disturbance))
         return guesses
 
-    def _rollout_guess(self, x0: np.ndarray, u_const: np.ndarray) -> np.ndarray:
+    def _rollout_guess(
+        self,
+        x0: np.ndarray,
+        u_const: np.ndarray,
+        disturbance: np.ndarray,
+    ) -> np.ndarray:
         """Constant-control rollout through the model (dynamically consistent)."""
         n_steps = self.config.horizon
         X = np.empty((8, n_steps + 1))
         X[:, 0] = x0
         for k in range(n_steps):
-            X[:, k + 1] = self.model_step(X[:, k], u_const)
+            X[:, k + 1] = np.array(
+                self.F(ca.DM(X[:, k]), ca.DM(u_const), ca.DM(disturbance))
+            ).ravel()
         U = np.tile(u_const, (n_steps, 1)).T
         # CasADi stores MX column-major: ravel with Fortran order.
         return np.concatenate([X.ravel(order="F"), U.ravel(order="F")])

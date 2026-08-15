@@ -1,7 +1,7 @@
-"""Canonical flagship reference scenario: LOS baseline and NMPC with EKF.
+"""Canonical flagship: LOS, nominal and disturbance-aware NMPC with EKF.
 
 This module owns the entire flagship simulation (scenario
-``scenario_v1_mismatch_disturbance``): the path, the environment, the sensor
+``scenario_v2_disturbance_aware``): the path, environment, sensor
 suites, the EKFs, the PID/PI controllers, the NMPC instance and the closed
 loop. ``examples/05_nmpc_demo.py`` is a thin entry point that only renders
 the recorded run; nothing here is duplicated there.
@@ -53,6 +53,7 @@ __all__ = [
 # Stable component IDs of the reference scenario (results/reference schema).
 LOS_COMPONENT_ID = "los_pid_v1"
 NMPC_COMPONENT_ID = "nominal_nmpc_v1"
+DISTURBANCE_AWARE_NMPC_COMPONENT_ID = "disturbance_aware_nmpc_v1"
 
 _SENSOR_NAMES = ("gnss", "compass", "speed", "gyro")
 
@@ -138,12 +139,13 @@ class ControllerReferenceRun:
 
 @dataclass(frozen=True)
 class ReferenceRun:
-    """The complete flagship reference run: shared path plus both controllers."""
+    """The flagship run: shared path plus three controller variants."""
 
     config: ReferenceScenarioConfig
     path: np.ndarray  # (M, 2) reference waypoints [m]
     los: ControllerReferenceRun
-    nmpc: ControllerReferenceRun
+    nmpc: ControllerReferenceRun  # nominal, zero-disturbance prediction
+    disturbance_aware_nmpc: ControllerReferenceRun
 
 
 def default_reference_config() -> ReferenceScenarioConfig:
@@ -173,7 +175,7 @@ def run_reference_scenario(
             flagship, ``default_reference_config()``).
 
     Returns:
-        A ReferenceRun with the shared path and both controller runs.
+        A ReferenceRun with the shared path and three controller runs.
 
     Example:
         >>> from vessel_gnc.reference import run_reference_scenario
@@ -183,8 +185,15 @@ def run_reference_scenario(
     _validate_config(config)
     path = make_s_curve_path()
     los = _run_los(config, path)
-    nmpc = _run_nmpc(config, path)
-    return ReferenceRun(config=config, path=path, los=los, nmpc=nmpc)
+    nmpc = _run_nmpc(config, path, disturbance_aware=False)
+    disturbance_aware_nmpc = _run_nmpc(config, path, disturbance_aware=True)
+    return ReferenceRun(
+        config=config,
+        path=path,
+        los=los,
+        nmpc=nmpc,
+        disturbance_aware_nmpc=disturbance_aware_nmpc,
+    )
 
 
 def reference_metrics(run: ReferenceRun) -> dict[str, object]:
@@ -193,13 +202,14 @@ def reference_metrics(run: ReferenceRun) -> dict[str, object]:
     Per-controller metrics use the applied (post-actuator) histories and the
     physical actuator bounds of the truth plant (identical to the nominal
     bounds in the current parameter sets). Estimator errors are computed
-    directly from the callback-aligned true/estimated records of the NMPC
-    run; the current-vector statistics discard the first
+    directly from the callback-aligned true/estimated records of the
+    disturbance-aware NMPC run; the current-vector statistics discard the first
     ``config.estimator_transient_s`` seconds.
 
     Returns:
         A JSON-serializable dict ``{"controllers": {...}, "estimator": {...}}``
-        with the component IDs ``los_pid_v1`` and ``nominal_nmpc_v1``.
+        with stable component IDs for LOS, nominal NMPC and
+        disturbance-aware NMPC.
 
     Example:
         >>> from vessel_gnc.reference import run_reference_scenario, reference_metrics
@@ -209,6 +219,7 @@ def reference_metrics(run: ReferenceRun) -> dict[str, object]:
     for component_id, controller in (
         (LOS_COMPONENT_ID, run.los),
         (NMPC_COMPONENT_ID, run.nmpc),
+        (DISTURBANCE_AWARE_NMPC_COMPONENT_ID, run.disturbance_aware_nmpc),
     ):
         controller_metrics[component_id] = path_following_metrics(
             controller.result,
@@ -218,7 +229,10 @@ def reference_metrics(run: ReferenceRun) -> dict[str, object]:
         )
     return {
         "controllers": controller_metrics,
-        "estimator": _estimator_metrics(run.config, run.nmpc.estimator),
+        "estimator": _estimator_metrics(
+            run.config,
+            run.disturbance_aware_nmpc.estimator,
+        ),
     }
 
 
@@ -248,9 +262,12 @@ def _run_los(
 
 
 def _run_nmpc(
-    config: ReferenceScenarioConfig, path: np.ndarray
+    config: ReferenceScenarioConfig,
+    path: np.ndarray,
+    *,
+    disturbance_aware: bool,
 ) -> ControllerReferenceRun:
-    """NMPC controller: mission-clock path reference, nominal model."""
+    """Mission-clock NMPC, with optional equivalent-current prediction."""
     nmpc = VesselNmpc(config.nominal_params, config.nmpc)
 
     def policy(
@@ -263,11 +280,23 @@ def _run_nmpc(
             nmpc.config.dt,
             nmpc.config.horizon,
         )
-        # The NMPC model includes the actuator states (docs/model.md §5): the
-        # filter's nominal actuator state is the current initial condition.
-        return nmpc.solve(xhat, ekf.actuator, refs, psi_refs, prev)
+        # The model includes actuator states. The disturbance-aware variant
+        # treats the EKF equivalent-current estimate as constant over the
+        # finite horizon; nominal NMPC uses the exact zero-disturbance case.
+        disturbance_estimate = (
+            ekf.equivalent_current_estimate if disturbance_aware else None
+        )
+        return nmpc.solve(
+            xhat,
+            ekf.actuator,
+            refs,
+            psi_refs,
+            prev,
+            disturbance_estimate=disturbance_estimate,
+        )
 
-    return _run_closed_loop(config, "NMPC", config.nmpc_period_s, policy, nmpc=nmpc)
+    label = "Disturbance-aware NMPC" if disturbance_aware else "Nominal NMPC"
+    return _run_closed_loop(config, label, config.nmpc_period_s, policy, nmpc=nmpc)
 
 
 def _run_closed_loop(

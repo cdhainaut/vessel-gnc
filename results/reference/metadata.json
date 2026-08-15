@@ -2,19 +2,19 @@
   "$schema": "results/reference/reference.schema.json",
   "artifact_type": "metadata",
   "artifacts": {
-    "assets/controller_comparison.png": "78fd2c1bdf3ddda8707060df218ae58f6402af15d4fe31c7a76880d6ba4d8022",
-    "assets/current_estimation.png": "1d79fead90a15daf684461f674fa60dafb81d5226773f51b10ee5b943b5042df",
-    "assets/hero.gif": "cddea914e33069df08c6526f000b44eeff4c6c63e56b713701d2fc62c75753c9",
-    "results/reference/benchmark.json": "477a140fd8c28e06ad857eb3bb66a1a1a44dc24bb59310f3f7e16ebeb759d664",
-    "results/reference/config.json": "27386d56b1a316cf7bd2d0bbd388c37863d13c46f6be7eb213db8f522acd95d0",
-    "results/reference/metrics.json": "34b5d2d754cb5e33545d96b3fcccf1683f5ab83327af69be12ba82a9bcad1c13"
+    "assets/controller_comparison.png": "02d618845f8ce272cabaf2343dfe039e124e25e12504d3cb8333b57a68e883db",
+    "assets/current_estimation.png": "8f3539bbb4107f1194a9795eab4f8b802f05a3239a83b1ea67294e0977fa2d79",
+    "assets/hero.gif": "f3435aa9015b4b6a899f876f420bb37ec2b2fbb5fbdb936586f2bc482b754808",
+    "results/reference/benchmark.json": "a73e14e6152afcd5a098e068e7404642a696b6be376698a843c94508ae29206c",
+    "results/reference/config.json": "ea1cc30a3220ddd8f993bfb330ee98eeefa381f6afe1cd857e647a8a25370053",
+    "results/reference/metrics.json": "8121d4a4880dc5f659e21ca116ae23d29599d3f49c9ac060438ed759e800bd8a"
   },
-  "generated_at_utc": "2026-08-15T09:00:29+00:00",
+  "generated_at_utc": "2026-08-15T09:44:51+00:00",
   "platform": {
     "machine": "x86_64",
     "os": "Linux"
   },
-  "schema_version": 1,
+  "schema_version": 2,
   "software": {
     "casadi": "3.7.2",
     "matplotlib": "3.10.9",
@@ -50,6 +50,6 @@
       "src/integrator.cpp",
       "tools/generate_reference_results.py"
     ],
-    "sha256": "32c6370aaabcb17f0de1f6ea2bbe9cb50721a74da59b79139a34e549ab063cb2"
+    "sha256": "4f7198bfe08cf9b7118c779a77d1fab84dd61c8cba8506322cb17b34624aa414"
   }
 }

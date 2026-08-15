@@ -402,9 +402,9 @@ def plot_reference_trajectories(
 ) -> plt.Figure:
     """Reference-run trajectory overview: LOS vs NMPC with prediction horizons.
 
-    Draws the reference path, both recorded trajectories, the NMPC
-    prediction horizons (from the recorded ``run.nmpc.horizon`` shots) and
-    the true current sampled at four times along the NMPC trajectory. Saved
+    Draws the reference path, all controller trajectories, the
+    disturbance-aware prediction horizons and the true environment sampled
+    at four times along the aware trajectory. Saved
     to ``output_path`` (the ignored results figure of the reference
     pipeline).
 
@@ -425,46 +425,71 @@ def plot_reference_trajectories(
     """
     path = run.path
     los_result = run.los.result
-    nmpc_result = run.nmpc.result
+    nominal_result = run.nmpc.result
+    aware_result = run.disturbance_aware_nmpc.result
 
     fig, ax = plt.subplots(figsize=(8.0, 6.6))
     ax.plot(path[:, 0], path[:, 1], "k--", lw=1.2, label="reference path")
-    ax.plot(los_result.x, los_result.y, color="0.6", lw=1.4, label="LOS baseline")
-    ax.plot(nmpc_result.x, nmpc_result.y, color="tab:blue", lw=1.6, label="NMPC")
-    for _, traj in run.nmpc.horizon:
+    ax.plot(los_result.x, los_result.y, color="0.6", lw=1.3, label="LOS baseline")
+    ax.plot(
+        nominal_result.x,
+        nominal_result.y,
+        color="tab:blue",
+        lw=1.4,
+        label="nominal NMPC",
+    )
+    ax.plot(
+        aware_result.x,
+        aware_result.y,
+        color="tab:green",
+        lw=1.7,
+        label="disturbance-aware NMPC",
+    )
+    for _, traj in run.disturbance_aware_nmpc.horizon:
         ax.plot(traj[0], traj[1], color="tab:cyan", lw=1.0, alpha=0.7)
     ax.plot(
-        nmpc_result.x[0],
-        nmpc_result.y[0],
+        aware_result.x[0],
+        aware_result.y[0],
         "o",
         color="tab:green",
         ms=8,
         label="start",
     )
     ax.plot(
-        nmpc_result.x[-1],
-        nmpc_result.y[-1],
+        aware_result.x[-1],
+        aware_result.y[-1],
         "x",
         color="tab:red",
         ms=10,
         mew=2,
-        label="end (NMPC)",
+        label="end (aware NMPC)",
     )
 
-    # True current at four spread times, anchored on the NMPC trajectory.
-    t = nmpc_result.t
-    for shot_t in np.linspace(0.0, t[-1], 4):
-        x0 = float(np.interp(shot_t, t, nmpc_result.x))
-        y0 = float(np.interp(shot_t, t, nmpc_result.y))
-        _environment_arrows(
-            ax, run.config.environment.sample(shot_t), x0, y0, annotate=True
+    # True environment at four times, anchored on the aware-NMPC trajectory.
+    # Use one legend entry per quantity instead of overlapping arrow labels.
+    t = aware_result.t
+    environment_handles: list[tuple] = []
+    for index, shot_t in enumerate(np.linspace(0.0, t[-1], 4)):
+        x0 = float(np.interp(shot_t, t, aware_result.x))
+        y0 = float(np.interp(shot_t, t, aware_result.y))
+        handles = _environment_arrows(
+            ax,
+            run.config.environment.sample(shot_t),
+            x0,
+            y0,
+            annotate=False,
         )
+        if index == 0:
+            environment_handles = handles
 
     ax.set_aspect("equal")
     ax.set_xlabel("x [m] (North)")
     ax.set_ylabel("y [m] (East)")
-    ax.set_title("NMPC vs LOS path following (EKF estimates)")
-    ax.legend(loc="best", framealpha=0.9)
+    ax.set_title("LOS vs nominal and disturbance-aware NMPC")
+    plot_handles, plot_labels = ax.get_legend_handles_labels()
+    plot_handles.extend(handle for handle, _ in environment_handles)
+    plot_labels.extend(label for _, label in environment_handles)
+    ax.legend(plot_handles, plot_labels, loc="best", framealpha=0.9)
     ax.grid(alpha=0.3)
     fig.tight_layout()
 
@@ -479,7 +504,7 @@ def plot_controller_comparison(
     metrics: dict[str, object],
     output_path: str | os.PathLike[str],
 ) -> plt.Figure:
-    """Deterministic LOS-vs-NMPC comparison figure (cross-track, controls).
+    """Deterministic LOS/nominal/aware comparison (tracking and controls).
 
     Timing is deliberately absent from this figure: wall-clock data lives
     exclusively in ``benchmark.json`` and the generated benchmark tables.
@@ -505,14 +530,19 @@ def plot_controller_comparison(
     """
     path = run.path
     los_result = run.los.result
-    nmpc_result = run.nmpc.result
+    nominal_result = run.nmpc.result
+    aware_result = run.disturbance_aware_nmpc.result
     los_metrics = metrics["controllers"]["los_pid_v1"]
-    nmpc_metrics = metrics["controllers"]["nominal_nmpc_v1"]
+    nominal_metrics = metrics["controllers"]["nominal_nmpc_v1"]
+    aware_metrics = metrics["controllers"]["disturbance_aware_nmpc_v1"]
     _, _, cross_los = project_onto_path(
         np.column_stack([los_result.x, los_result.y]), path
     )
-    _, _, cross_nmpc = project_onto_path(
-        np.column_stack([nmpc_result.x, nmpc_result.y]), path
+    _, _, cross_nominal = project_onto_path(
+        np.column_stack([nominal_result.x, nominal_result.y]), path
+    )
+    _, _, cross_aware = project_onto_path(
+        np.column_stack([aware_result.x, aware_result.y]), path
     )
     bounds = run.config.truth_params
 
@@ -520,7 +550,20 @@ def plot_controller_comparison(
 
     ax = axes[0, 0]
     ax.plot(los_result.t, cross_los, color="0.6", lw=1.2, label="LOS")
-    ax.plot(nmpc_result.t, cross_nmpc, color="tab:blue", lw=1.2, label="NMPC")
+    ax.plot(
+        nominal_result.t,
+        cross_nominal,
+        color="tab:blue",
+        lw=1.1,
+        label="nominal NMPC",
+    )
+    ax.plot(
+        aware_result.t,
+        cross_aware,
+        color="tab:green",
+        lw=1.2,
+        label="aware NMPC",
+    )
     ax.axhline(0.0, color="k", lw=0.8)
     ax.set_xlabel("t [s]")
     ax.set_ylabel("cross-track [m]")
@@ -529,63 +572,108 @@ def plot_controller_comparison(
     ax.grid(alpha=0.3)
 
     ax = axes[0, 1]
-    ax.plot(los_result.t, los_result.thrust, color="0.6", lw=1.0)
-    ax.plot(nmpc_result.t, nmpc_result.thrust, color="tab:blue", lw=1.0)
+    ax.plot(los_result.t, los_result.thrust, color="0.6", lw=1.0, label="LOS")
+    ax.plot(
+        nominal_result.t,
+        nominal_result.thrust,
+        color="tab:blue",
+        lw=1.0,
+        label="nominal NMPC",
+    )
+    ax.plot(
+        aware_result.t,
+        aware_result.thrust,
+        color="tab:green",
+        lw=1.0,
+        label="aware NMPC",
+    )
     ax.axhline(bounds.thrust_max, color="r", ls=":", lw=1)
     ax.axhline(bounds.thrust_min, color="r", ls=":", lw=1)
     ax.set_xlabel("t [s]")
     ax.set_ylabel("thrust [N]")
-    ax.set_title("Surge thrust (LOS gray, NMPC blue) with physical bounds")
+    ax.set_title("Surge thrust with physical bounds")
+    ax.legend(loc="best")
     ax.grid(alpha=0.3)
 
     ax = axes[1, 0]
-    ax.plot(los_result.t, los_result.yaw_moment, color="0.6", lw=1.0)
-    ax.plot(nmpc_result.t, nmpc_result.yaw_moment, color="tab:blue", lw=1.0)
+    ax.plot(
+        los_result.t,
+        los_result.yaw_moment,
+        color="0.6",
+        lw=1.0,
+        label="LOS",
+    )
+    ax.plot(
+        nominal_result.t,
+        nominal_result.yaw_moment,
+        color="tab:blue",
+        lw=1.0,
+        label="nominal NMPC",
+    )
+    ax.plot(
+        aware_result.t,
+        aware_result.yaw_moment,
+        color="tab:green",
+        lw=1.0,
+        label="aware NMPC",
+    )
     ax.axhline(bounds.moment_max, color="r", ls=":", lw=1)
     ax.axhline(bounds.moment_min, color="r", ls=":", lw=1)
     ax.set_xlabel("t [s]")
     ax.set_ylabel("yaw moment [N m]")
-    ax.set_title("Yaw moment (LOS gray, NMPC blue) with physical bounds")
+    ax.set_title("Yaw moment with physical bounds")
+    ax.legend(loc="best")
     ax.grid(alpha=0.3)
 
     ax = axes[1, 1]
     ax.axis("off")
     rows = [
-        ("", "LOS", "NMPC"),
+        ("", "LOS", "Nominal", "Aware"),
         (
             "RMS cross-track [m]",
             f"{los_metrics['cross_track_rms_m']:.2f}",
-            f"{nmpc_metrics['cross_track_rms_m']:.2f}",
+            f"{nominal_metrics['cross_track_rms_m']:.2f}",
+            f"{aware_metrics['cross_track_rms_m']:.2f}",
         ),
         (
             "Max cross-track [m]",
             f"{los_metrics['cross_track_max_m']:.2f}",
-            f"{nmpc_metrics['cross_track_max_m']:.2f}",
+            f"{nominal_metrics['cross_track_max_m']:.2f}",
+            f"{aware_metrics['cross_track_max_m']:.2f}",
         ),
         (
             "RMS heading error [deg]",
             f"{np.degrees(los_metrics['heading_error_rms_rad']):.1f}",
-            f"{np.degrees(nmpc_metrics['heading_error_rms_rad']):.1f}",
+            f"{np.degrees(nominal_metrics['heading_error_rms_rad']):.1f}",
+            f"{np.degrees(aware_metrics['heading_error_rms_rad']):.1f}",
         ),
         (
             "RMS thrust [N]",
             f"{los_metrics['thrust_rms_N']:.1f}",
-            f"{nmpc_metrics['thrust_rms_N']:.1f}",
+            f"{nominal_metrics['thrust_rms_N']:.1f}",
+            f"{aware_metrics['thrust_rms_N']:.1f}",
         ),
         (
             "Max yaw moment [N m]",
             f"{los_metrics['moment_max_Nm']:.1f}",
-            f"{nmpc_metrics['moment_max_Nm']:.1f}",
+            f"{nominal_metrics['moment_max_Nm']:.1f}",
+            f"{aware_metrics['moment_max_Nm']:.1f}",
         ),
         (
             "Any saturation [s]",
             f"{los_metrics['any_saturation_duration_s']:.1f}",
-            f"{nmpc_metrics['any_saturation_duration_s']:.1f}",
+            f"{nominal_metrics['any_saturation_duration_s']:.1f}",
+            f"{aware_metrics['any_saturation_duration_s']:.1f}",
         ),
     ]
-    table = ax.table(cellText=rows, loc="center", cellLoc="center")
+    table = ax.table(
+        cellText=rows,
+        colWidths=[0.43, 0.19, 0.19, 0.19],
+        loc="center",
+        cellLoc="center",
+    )
     table.auto_set_font_size(False)
-    table.set_fontsize(10)
+    table.set_fontsize(9)
     table.scale(1.0, 1.6)
     ax.set_title("Comparison (deterministic metrics)")
 
@@ -604,7 +692,8 @@ def plot_current_estimation(
     Physical current (solid) and the EKF equivalent-current state (dashed)
     are shown with their difference after the discarded estimator transient.
     The difference includes wind/model-mismatch confounders; it is not a
-    standalone current-sensor error. Rendered from ``run.nmpc.estimator`` so
+    standalone current-sensor error. Rendered from the disturbance-aware
+    controller's estimator history so
     it shares the exact reference scenario and seed of the other assets.
 
     Args:
@@ -622,9 +711,10 @@ def plot_current_estimation(
         ...     run, "assets/current_estimation.png"
         ... )  # doctest: +SKIP
     """
-    t = run.nmpc.estimator.t
-    true = run.nmpc.estimator.current_true
-    estimate = run.nmpc.estimator.current_estimate
+    history = run.disturbance_aware_nmpc.estimator
+    t = history.t
+    true = history.current_true
+    estimate = history.current_estimate
     transient = run.config.estimator_transient_s
     error = np.hypot(estimate[:, 0] - true[:, 0], estimate[:, 1] - true[:, 1])
 

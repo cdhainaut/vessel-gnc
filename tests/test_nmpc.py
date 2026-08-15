@@ -49,13 +49,19 @@ def _run_nmpc(duration, path, env, config=None, state0=None, speed_ref=1.3, peri
     return result, nmpc, solve_times
 
 
-def test_model_matches_cpp_kernel():
+def test_model_matches_cpp_kernel_with_disturbance():
     # The CasADi prediction model (8 states: vessel + actuator) must reproduce
-    # the C++ kernel composed over the same internal sub-steps: this is the
-    # cross-validation of the deliberate model duplication.
+    # the C++ kernel over the same internal sub-steps, including current
+    # transport and inertial wind-force rotation.
     nmpc = _nmpc()
     rng = np.random.default_rng(0)
     h = nmpc.config.dt / nmpc.config.substeps
+    environment = _core.Environment(
+        current_north=0.12,
+        current_east=-0.08,
+        wind_north=2.0,
+        wind_east=-1.0,
+    )
     worst = 0.0
     for _ in range(20):
         x = rng.uniform(
@@ -63,22 +69,44 @@ def test_model_matches_cpp_kernel():
             [20, 20, 3, 2, 0.5, 0.3, 40.0, 3.0],
         )
         u = rng.uniform([-10, -3], [40, 3])
-        cas = nmpc.model_step(x, u)
+        cas = nmpc.model_step(x, u, environment)
         s = _core.State(x=x[0], y=x[1], psi=x[2], u=x[3], v=x[4], r=x[5])
         actuator = _core.ActuatorState(thrust=x[6], yaw_moment=x[7])
         cmd = _core.Control(thrust=u[0], yaw_moment=u[1])
-        env = _core.Environment()
         for _ in range(nmpc.config.substeps):
             actuator = _core.actuator_step(actuator, cmd, PARAMS, h)
             applied = _core.Control(
                 thrust=actuator.thrust, yaw_moment=actuator.yaw_moment
             )
-            s = _core.rk4_step(s, applied, env, PARAMS, h)
+            s = _core.rk4_step(s, applied, environment, PARAMS, h)
         cpp = np.array(
             [s.x, s.y, s.psi, s.u, s.v, s.r, actuator.thrust, actuator.yaw_moment]
         )
         worst = max(worst, float(np.max(np.abs(cas - cpp))))
     assert worst < 1e-8
+
+
+def test_nominal_prediction_is_zero_disturbance_case():
+    nmpc = _nmpc()
+    x = np.array([2.0, -1.0, 0.4, 1.1, -0.2, 0.08, 25.0, 0.3])
+    u = np.array([30.0, -0.5])
+    nominal = nmpc.model_step(x, u)
+    np.testing.assert_array_equal(
+        nominal,
+        nmpc.model_step(x, u, _core.Environment()),
+    )
+    disturbed = nmpc.model_step(
+        x,
+        u,
+        _core.Environment(current_east=0.2),
+    )
+    assert np.linalg.norm(disturbed - nominal) > 1e-3
+    with pytest.raises(ValueError, match="finite"):
+        nmpc.model_step(
+            x,
+            u,
+            _core.Environment(current_north=np.nan),
+        )
 
 
 def test_control_within_bounds():

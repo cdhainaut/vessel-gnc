@@ -1,9 +1,10 @@
 {
   "$schema": "results/reference/reference.schema.json",
   "artifact_type": "config",
-  "git_commit": "aca57d8391217ff7628a5203d220a39344dfc48d",
+  "git_commit": "53e0958039310f59f44ec2b7be4a840dd0e882d2",
   "scenario": {
     "components": {
+      "controller_disturbance_aware_nmpc": "disturbance_aware_nmpc_v1",
       "controller_los": "los_pid_v1",
       "controller_nmpc": "nominal_nmpc_v1",
       "environment": "rotating_current_gusts_v1",
@@ -14,7 +15,7 @@
       "los_s": 0.1,
       "nmpc_s": 0.2
     },
-    "description": "Flagship reference scenario: S-curve path (s_curve_v1) with a LOS PID baseline and a nominal-model NMPC, both running on an augmented-current EKF estimate, under a rotating current with gusts and a perturbed truth plant (model mismatch).",
+    "description": "Flagship reference scenario: S-curve path (s_curve_v1) with LOS, nominal NMPC and disturbance-aware NMPC. All run on EKF state estimates under a rotating current, gusts and a perturbed truth plant; the aware predictor holds the EKF equivalent-current estimate constant over its horizon.",
     "duration_s": 120.0,
     "environment": {
       "current_amplitude_m_s": 0.06,
@@ -29,7 +30,7 @@
       "gust_width_s": 5.0,
       "wind_mean_east_N": 3.0
     },
-    "id": "scenario_v1_mismatch_disturbance",
+    "id": "scenario_v2_disturbance_aware",
     "integration_dt_s": 0.01,
     "los": {
       "heading_gains": {
@@ -166,5 +167,5 @@
       "thrust_time_constant_s": 1.0
     }
   },
-  "schema_version": 1
+  "schema_version": 2
 }
