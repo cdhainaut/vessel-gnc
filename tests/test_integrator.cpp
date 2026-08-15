@@ -6,6 +6,8 @@
 #include <array>
 #include <cmath>
 
+#include <Eigen/Core>
+
 #include "vessel_gnc/dynamics.hpp"
 #include "vessel_gnc/integrator.hpp"
 
@@ -162,6 +164,39 @@ TEST(RK4, CurrentEquilibrium) {
     }
     EXPECT_NEAR(s.u, 0.0, 1e-9);
     EXPECT_NEAR(s.v, 0.5, 1e-9);
+}
+
+TEST(RK4, TurningBodyPreservesConstantInertialCurrentDrift) {
+    // A co-moving vessel with a constant yaw rate has zero relative
+    // translational velocity. Its body components rotate, while its inertial
+    // velocity and straight drift remain constant.
+    ModelParams p = default_params();
+    p.lin_damping_r = 0.0;
+    p.quad_damping_r = 0.0;
+    Environment env;
+    env.current_north = 0.4;
+    env.current_east = -0.2;
+    State s;
+    s.u = env.current_north;
+    s.v = env.current_east;
+    s.r = 0.2;
+
+    constexpr double dt = 0.01;
+    constexpr int n_steps = 500;
+    for (int k = 0; k < n_steps; ++k) {
+        s = rk4_step(s, Control{}, env, p, dt);
+    }
+
+    const double duration = n_steps * dt;
+    const Eigen::Vector2d expected_body =
+        rotation_matrix(s.psi).transpose()
+        * Eigen::Vector2d(env.current_north, env.current_east);
+    EXPECT_NEAR(s.x, env.current_north * duration, 1e-9);
+    EXPECT_NEAR(s.y, env.current_east * duration, 1e-9);
+    EXPECT_NEAR(s.psi, 0.2 * duration, 1e-12);
+    EXPECT_NEAR(s.u, expected_body.x(), 1e-9);
+    EXPECT_NEAR(s.v, expected_body.y(), 1e-9);
+    EXPECT_NEAR(s.r, 0.2, 1e-12);
 }
 
 TEST(RK4, StaysFiniteOverLongRun) {

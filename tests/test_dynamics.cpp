@@ -172,6 +172,33 @@ TEST(Environment, CurrentDragsVesselAlong) {
     EXPECT_NEAR(d_drift.v, 0.0, kTol);
 }
 
+TEST(Environment, TurningBodyTransportsConstantInertialCurrent) {
+    // With zero relative translational velocity, hydrodynamic loads vanish.
+    // The absolute body velocity must still rotate as the body turns:
+    // v_c_dot^b = -S(r) v_c^b = [r v_c, -r u_c].
+    ModelParams p = default_params();
+    p.lin_damping_r = 0.0;
+    p.quad_damping_r = 0.0;
+
+    Environment env;
+    env.current_north = 0.4;
+    env.current_east = -0.2;
+
+    State s;
+    s.psi = 0.7;
+    s.r = 0.3;
+    const Eigen::Vector2d current_body =
+        rotation_matrix(s.psi).transpose()
+        * Eigen::Vector2d(env.current_north, env.current_east);
+    s.u = current_body.x();
+    s.v = current_body.y();
+
+    const State d = derivative(s, Control{}, env, p);
+    EXPECT_NEAR(d.u, s.r * current_body.y(), 1e-12);
+    EXPECT_NEAR(d.v, -s.r * current_body.x(), 1e-12);
+    EXPECT_NEAR(d.r, 0.0, 1e-12);
+}
+
 TEST(Environment, WindForceActsInInertialDirection) {
     // Wind is an inertial-frame force: the same eastward wind pushes sway at
     // psi = 0 and surge at psi = pi/2.

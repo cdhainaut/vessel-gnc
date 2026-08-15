@@ -13,8 +13,11 @@ Eigen::Matrix2d rotation_matrix(double psi);
 // Time derivative of the full vessel state for the 3-DOF model
 // (docs/model.md §2–§4):
 //     eta_dot = R(psi) nu
-//     M nu_dot = tau + tau_env - C(nu_rel) nu_rel - D(nu_rel) nu_rel
-// Assumes finite inputs; no NaN/Inf checking inside the kernel.
+//     nu_dot = nu_c_dot^b
+//            + M^-1 [tau + tau_env - C(nu_rel) nu_rel - D(nu_rel) nu_rel]
+// where nu_c_dot^b includes body-frame transport of a locally constant
+// inertial current (docs/model.md §3). Assumes finite inputs; no NaN/Inf
+// checking inside the kernel.
 State derivative(const State& state,
                  const Control& control,
                  const Environment& environment,

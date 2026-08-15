@@ -23,9 +23,9 @@ re-solved at 5 Hz.*
 <!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **482.9 ns/step** |
+| C++ RK4 propagation (vessel + actuator) | **472.1 ns/step** |
 | 1000 s simulation (Python loop) | **342 ms** |
-| NMPC mean / p95 / max solve time [ms] | **96.0 / 118.3 / 210.8** |
+| NMPC mean / p95 / max solve time [ms] | **91.0 / 118.0 / 208.7** |
 
 Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v1`, 300 samples, 0 failed solves). The 5 Hz NMPC control period corresponds to a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
 
@@ -56,17 +56,17 @@ estimates the ambient current online.
 | Metric | LOS (PID/PI) | NMPC |
 |---|---:|---:|
 | RMS cross-track error [m] | 0.68 | 0.44 |
-| P95 cross-track error [m] | 0.97 | 0.69 |
+| P95 cross-track error [m] | 0.98 | 0.69 |
 | Max cross-track error [m] | 1.37 | 0.80 |
 | RMS wrapped heading error [deg] | 6.3 | 10.2 |
-| Max wrapped heading error [deg] | 17.7 | 27.2 |
-| RMS applied thrust [N] | 31.8 | 32.6 |
-| Max applied thrust [N] | 38.0 | 58.9 |
+| Max wrapped heading error [deg] | 17.6 | 27.2 |
+| RMS applied thrust [N] | 31.8 | 32.7 |
+| Max applied thrust [N] | 38.1 | 58.9 |
 | RMS applied yaw moment [N m] | 1.3 | 2.1 |
 | Max applied yaw moment [N m] | 3.3 | 6.0 |
 | Thrust saturation duration [s] | 0.0 | 0.0 |
-| Yaw-moment saturation duration [s] | 0.0 | 1.9 |
-| Either channel saturated [s] | 0.0 | 1.9 |
+| Yaw-moment saturation duration [s] | 0.0 | 1.8 |
+| Either channel saturated [s] | 0.0 | 1.8 |
 
 Deterministic flagship metrics formatted from `results/reference/metrics.json` (scenario `scenario_v1_mismatch_disturbance`, revision 1, seed 42, 120.0 s at 0.01 s integration). Saturation counts left-closed intervals whose applied value lies within 1% of a `ModelParams` bound span (docs/validation.md). No wall-clock timing appears here: NMPC solve times are machine-dependent and reported separately in the benchmark table.
 
@@ -150,9 +150,9 @@ change is not reflected in the committed artifacts.
 | Schema | `results/reference/reference.schema.json` (version 1) |
 | Deterministic metrics | `results/reference/metrics.json` |
 | Machine-dependent benchmark | `results/reference/benchmark.json` |
-| Generated at (UTC) | 2026-08-14T01:01:57+00:00 |
-| Source commit | `0f44547ad79aee773ed9df4ffda2994dafbfc650` |
-| Source fingerprint | dirty: true · `3d7bdddc8b4ad9acb32f95760991fadf36f1351a67a63fa16ca793a68a9e64af` |
+| Generated at (UTC) | 2026-08-15T08:44:43+00:00 |
+| Source commit | `3add1f1086df420bc0e384dea9c9aba5b115a236` |
+| Source fingerprint | dirty: true · `825516e58f37aab9840817b692bf2ecc7bd409d4a47ae17e27e6b75678041275` |
 
 `git_commit` and the `dirty` flag record the repository state at generation time; the source fingerprint is content-based and authoritative. After committing source changes, either regenerate the artifacts (`python tools/generate_reference_results.py`) or keep the source contents unchanged: `--check` compares only the content fingerprint, so a clean checkout at a new commit passes when the source contents are unchanged and fails when they changed. `--check` validates schema, scenario, source fingerprint, artifact hashes and marker bodies without any simulation; `--verify-determinism` runs one fresh 120 s reference and compares it with `results/reference/metrics.json`: the LOS baseline metrics exactly, and the NMPC/estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its full-precision iterates may differ in the last ulps), reporting the worst offending key and deviation on failure. Reproducibility is guaranteed within the software environment recorded in `metadata.json` (`software` block): regenerating in another environment requires a fresh `--verify-determinism` in that environment before the committed metrics can be trusted.
 

@@ -108,11 +108,11 @@ explicit 20.0 s transient.
 <!-- generated:reference-estimator-v1:start -->
 | Metric | Value |
 |---|---:|
-| Position error RMS [m] | 0.17 |
+| Position error RMS [m] | 0.16 |
 | Position error max [m] | 0.43 |
 | Yaw-rate error RMS [rad/s] | 0.008 |
-| Current error RMS [m/s] (after 20.0 s transient) | 0.089 |
-| Current error max [m/s] (after 20.0 s transient) | 0.169 |
+| Current error RMS [m/s] (after 20.0 s transient) | 0.090 |
+| Current error max [m/s] (after 20.0 s transient) | 0.175 |
 
 Estimator errors of the NMPC reference run, computed from the callback-aligned true/estimated records and formatted from `results/reference/metrics.json` (scenario `scenario_v1_mismatch_disturbance`, seed 42). The current estimate absorbs all unmodelled environmental forces, so wind gusts and model mismatch can contaminate it: the current error is an equivalent-disturbance indicator (docs/estimation.md §5), not a standalone current-sensor validation.
 

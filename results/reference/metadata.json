@@ -2,14 +2,14 @@
   "$schema": "results/reference/reference.schema.json",
   "artifact_type": "metadata",
   "artifacts": {
-    "assets/controller_comparison.png": "bed659f0b552fd6d6020e32afd82a4c6d20e39cacfa36820ef06ecc5c84fc156",
-    "assets/current_estimation.png": "9380622397448cbae75742a845bb31739e73e1f3c4ef8753ae0b8494fbb16688",
-    "assets/hero.gif": "ffc0e5c98d2ba12c3d5d607621cf8bf17f71f01224507647f6d26825006162e2",
-    "results/reference/benchmark.json": "6f0d5a7e9f44bc71bff7e254647e5ef75554a201366c0ae4ddff51f760174d51",
-    "results/reference/config.json": "86c1878f1c77dbf802264005eecf185a45dfc633f52768c7aa1f7c14d453c17a",
-    "results/reference/metrics.json": "c1256d4c3af89d432d3b2abd0d5cb2fdcb6727c73c7e6aa4581cfd5ec8c119bb"
+    "assets/controller_comparison.png": "d295e13b85f5a971b3dd76a1962e3a99c2f711729383ab231a2b1c978f1ab9fb",
+    "assets/current_estimation.png": "f1f22b95573e7a60f93f67d3702aa71fce46674f681edb8809157d70d9be0040",
+    "assets/hero.gif": "d15d32551e8b53b00c24f74e1bfc77eec2749ed8347f38ecec044ef63f91f5eb",
+    "results/reference/benchmark.json": "01f930fb976c50d80b8e955919724f6650714961d59deef70c8c82daaa6ebfdb",
+    "results/reference/config.json": "6abdb6055b7424b171e32184f147d32d4f8a661e1f7baf0918fb54612462472d",
+    "results/reference/metrics.json": "c50976fb48564a6471b4c48f92b090cccd8e2fb02fe9d8c46035ffc7625557db"
   },
-  "generated_at_utc": "2026-08-14T01:01:57+00:00",
+  "generated_at_utc": "2026-08-15T08:44:43+00:00",
   "platform": {
     "machine": "x86_64",
     "os": "Linux"
@@ -50,6 +50,6 @@
       "src/integrator.cpp",
       "tools/generate_reference_results.py"
     ],
-    "sha256": "3d7bdddc8b4ad9acb32f95760991fadf36f1351a67a63fa16ca793a68a9e64af"
+    "sha256": "825516e58f37aab9840817b692bf2ecc7bd409d4a47ae17e27e6b75678041275"
   }
 }

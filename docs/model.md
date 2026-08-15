@@ -43,9 +43,30 @@ psi_dot = r
 
 ## 3. Dynamics
 
+The implementation uses Fossen's simplified relative equations for an
+irrotational current:
+
 ```text
-M nu_dot + C(nu_rel) nu_rel + D(nu_rel) nu_rel = tau + tau_env
+M nu_rel_dot + C(nu_rel) nu_rel + D(nu_rel) nu_rel = tau + tau_env
+nu_rel = nu - nu_c^b
+nu_c^b = [R(psi)^T V_c^n, 0]^T
 ```
+
+The stored state velocity `nu` is absolute (body components of velocity over
+ground), because the kinematics use `eta_dot = R(psi) nu`. For a current that is
+constant in the inertial frame, its body components rotate with the vessel:
+
+```text
+v_c_dot^b = -S(r) v_c^b = [r v_c, -r u_c]^T
+nu_dot = nu_c_dot^b
+        + M^-1 [tau + tau_env - C(nu_rel) nu_rel - D(nu_rel) nu_rel]
+```
+
+This transport term is required even when the relative translational velocity
+is zero: a turning body sees the same inertial current through changing body
+components. The scenario's inertial current varies slowly; the smaller
+`R(psi)^T V_c_dot^n` acceleration is intentionally neglected, so the current
+model is quasi-steady rather than a model of accelerating water.
 
 **Mass matrix** (rigid body + diagonal added mass):
 
@@ -62,13 +83,15 @@ Motion Control*, 2011, eq. 3.26 ff.):
 C(nu_rel) nu_rel = [-m22 v_rel r ,  m11 u_rel r ,  (m22 - m11) u_rel v_rel]^T
 ```
 
-The yaw component `(m22 - m11) u_rel v_rel` is the (destabilizing) Munk
-coupling: for a slender hull (`m22 > m11`), a starboard sideslip at forward
-speed produces a clockwise yaw moment. It is kept in the model because it is
-physically important for turning behaviour; the default parameters are chosen
-so that the hull remains directionally stable at cruise. In a steady turn the
-vessel develops a *port* sideslip (`v < 0`, bow into the turn), so the Munk
-moment opposes the turn and reduces the effective yaw damping.
+The yaw component `(m22 - m11) u_rel v_rel` produces the destabilizing Munk
+coupling when moved to the right-hand side. For a slender hull (`m22 > m11`),
+a starboard relative sway (`v_rel > 0`) at forward speed therefore produces a
+counter-clockwise hydrodynamic yaw moment. It is kept because it is physically
+important for turning behaviour; the default parameters are chosen so that
+yaw damping still gives directional stability at cruise. In a clockwise steady
+turn the vessel develops a *port* relative sideslip (`v_rel < 0`, bow into the
+turn), so the Munk moment assists the turn and reduces the effective yaw
+damping.
 
 **Damping** (linear + quadratic, diagonal):
 
@@ -94,10 +117,11 @@ Gaussian wind gusts on top of the mean force — exactly reproducible, no RNG
 
 - **Current** — ambient flow with inertial components `(V_cN, V_cE)`, assumed
   uniform and irrotational. Damping and Coriolis terms act on the *relative*
-  velocity `nu_rel = nu - R(psi)^T [V_cN, V_cE]^T`, which is the standard
-  manoeuvring formulation. Physical consequences: a vessel at rest in a current
-  is dragged along with it; a vessel moving exactly with the current feels no
-  hydrodynamic force. (Both are validated in `tests/`.)
+  velocity `nu_rel = nu - R(psi)^T [V_cN, V_cE]^T`; the absolute acceleration
+  also includes the body-frame transport term above. Physical consequences: a
+  vessel at rest in a current is dragged along with it; a vessel moving exactly
+  with a constant inertial current feels no hydrodynamic load, including while
+  its body frame turns. (These cases are validated in `tests/`.)
 - **Wind** — constant force in the inertial frame, applied at the hull centre.
   Wind-induced yaw moment is neglected in the current model.
 
@@ -167,6 +191,7 @@ order 10–20 m).
 | 3-DOF horizontal plane | Scope of v1 (plan §3) | Quasi-horizontal motions, calm water, low Froude number | No heave/roll/pitch, no wave forces |
 | Diagonal added mass | Standard for symmetric hulls | Manoeuvring studies | No cross-coupling (`Y_rdot`, `N_vdot`) |
 | Diagonal linear + quadratic damping | Standard surge/sway/yaw representation | Moderate speeds and drift angles | No damping cross-terms |
+| Slowly varying current treated quasi-steadily | `Environment` supplies velocity, not acceleration | Current timescale long relative to vessel dynamics | Neglects the inertial term `R^T V_c_dot^n`; body-frame rotational transport is retained |
 | Constant inertial wind force, no wind moment | Current simplification | Weak-to-moderate wind | No apparent-wind model, no wind moment |
 | First-order actuator with rate limits | Credible lag/saturation/rate behaviour | Low-frequency control studies | No propeller/rudder detail; illustrative time constants |
 | Zero-order hold control per RK4 step | Standard sampled control | `dt` small relative to dynamics | Inter-sample behaviour not modelled |
@@ -185,7 +210,7 @@ All cases below are automated in `tests/test_dynamics.cpp`,
 | Damping sign | Forward speed decays without actuation | Pass |
 | Surge equilibrium (plan case B) | Derivative at drag balance; 60 s run reaches `u_eq` | Pass |
 | Steady yaw (plan case C) | Yaw acceleration vanishes at drag balance; 60 s run settles into a steady turn with port sideslip (`v < 0`) | Pass |
-| Current model | Resting vessel dragged along; co-moving vessel feels no force | Pass |
+| Current model | Resting vessel dragged along; co-moving vessel feels no hydrodynamic load; turning body preserves constant inertial drift through the body-frame transport term | Pass |
 | Wind model | Inertial force acts through the rotation matrix | Pass |
 | RK4 convergence (plan case D) | Error vs analytical surge solution at dt, dt/2, dt/4 | Ratio ≈ 16 (O(dt⁴)) |
 | Determinism | Repeated runs bit-identical | Pass |

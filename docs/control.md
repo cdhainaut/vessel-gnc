@@ -203,17 +203,17 @@ solve times are machine-dependent and reported only in the benchmark table.
 | Metric | LOS (PID/PI) | NMPC |
 |---|---:|---:|
 | RMS cross-track error [m] | 0.68 | 0.44 |
-| P95 cross-track error [m] | 0.97 | 0.69 |
+| P95 cross-track error [m] | 0.98 | 0.69 |
 | Max cross-track error [m] | 1.37 | 0.80 |
 | RMS wrapped heading error [deg] | 6.3 | 10.2 |
-| Max wrapped heading error [deg] | 17.7 | 27.2 |
-| RMS applied thrust [N] | 31.8 | 32.6 |
-| Max applied thrust [N] | 38.0 | 58.9 |
+| Max wrapped heading error [deg] | 17.6 | 27.2 |
+| RMS applied thrust [N] | 31.8 | 32.7 |
+| Max applied thrust [N] | 38.1 | 58.9 |
 | RMS applied yaw moment [N m] | 1.3 | 2.1 |
 | Max applied yaw moment [N m] | 3.3 | 6.0 |
 | Thrust saturation duration [s] | 0.0 | 0.0 |
-| Yaw-moment saturation duration [s] | 0.0 | 1.9 |
-| Either channel saturated [s] | 0.0 | 1.9 |
+| Yaw-moment saturation duration [s] | 0.0 | 1.8 |
+| Either channel saturated [s] | 0.0 | 1.8 |
 
 Deterministic flagship metrics formatted from `results/reference/metrics.json` (scenario `scenario_v1_mismatch_disturbance`, revision 1, seed 42, 120.0 s at 0.01 s integration). Saturation counts left-closed intervals whose applied value lies within 1% of a `ModelParams` bound span (docs/validation.md). No wall-clock timing appears here: NMPC solve times are machine-dependent and reported separately in the benchmark table.
 

@@ -30,6 +30,12 @@ State derivative(const State& state,
     const double v_rel = state.v - current_body.y();
     const double r_rel = state.r;
 
+    // Transport of an inertially constant current into the rotating body
+    // frame: v_c_dot^b = -S(r) v_c^b. The environment scenario varies slowly,
+    // so its inertial acceleration R^T v_c_dot^n is neglected (docs/model.md §3).
+    const double current_transport_u = state.r * current_body.y();
+    const double current_transport_v = -state.r * current_body.x();
+
     // Diagonal mass matrix M = diag(m11, m22, m33).
     const double m11 = params.mass + params.added_mass_x;
     const double m22 = params.mass + params.added_mass_y;
@@ -62,9 +68,10 @@ State derivative(const State& state,
     d.y = R(1, 0) * state.u + R(1, 1) * state.v;  // y_dot = u sin(psi) + v cos(psi)
     d.psi = state.r;
 
-    // M nu_dot = tau + tau_env - C(nu_rel) nu_rel - D(nu_rel) nu_rel
-    d.u = (tau_x + wind_body.x() - cx - du) / m11;
-    d.v = (wind_body.y() - cy - dv) / m22;
+    // nu_dot = nu_c_dot^b
+    //        + M^-1 [tau + tau_env - C(nu_rel) nu_rel - D(nu_rel) nu_rel]
+    d.u = current_transport_u + (tau_x + wind_body.x() - cx - du) / m11;
+    d.v = current_transport_v + (wind_body.y() - cy - dv) / m22;
     d.r = (tau_r - cr - dr) / m33;
     return d;
 }
