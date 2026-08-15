@@ -99,8 +99,32 @@ Automated in `tests/test_ekf.py`:
 | Current estimation | Time-varying current + gusts unknown to the filter, 120 s: the estimate tracks the rotation | RMS current error < 60 mm/s (test seed) |
 | Closed-loop tracking | LOS + PID on EKF estimates, time-varying current + gusts, 120 s | RMS position error < 3 m, max < 6 m |
 
-The flagship scenario (example 04) achieves RMS position error 0.80 m and
-RMS yaw-rate error 0.007 rad/s with the default settings.
+The flagship scenario (`scenario_v1_mismatch_disturbance`, revision 1,
+seed 42) records the callback-aligned EKF estimates of the NMPC reference
+run. The deterministic estimator errors below are formatted from
+`results/reference/metrics.json`; current-vector statistics discard the
+explicit 20.0 s transient.
+
+<!-- generated:reference-estimator-v1:start -->
+| Metric | Value |
+|---|---:|
+| Position error RMS [m] | 0.17 |
+| Position error max [m] | 0.43 |
+| Yaw-rate error RMS [rad/s] | 0.008 |
+| Current error RMS [m/s] (after 20.0 s transient) | 0.089 |
+| Current error max [m/s] (after 20.0 s transient) | 0.169 |
+
+Estimator errors of the NMPC reference run, computed from the callback-aligned true/estimated records and formatted from `results/reference/metrics.json` (scenario `scenario_v1_mismatch_disturbance`, seed 42). The current estimate absorbs all unmodelled environmental forces, so wind gusts and model mismatch can contaminate it: the current error is an equivalent-disturbance indicator (docs/estimation.md §5), not a standalone current-sensor validation.
+
+<!-- generated:reference-estimator-v1:end -->
+
+![Current estimation: true vs EKF-estimated ambient current](../assets/current_estimation.png)
+
+The figure above shares the exact reference scenario and seed of the
+metrics: sampled true and EKF-estimated current arrows over the NMPC run.
+Given the limitation of §5 (the current estimate can absorb wind and model
+mismatch), read the current-error numbers as an equivalent-disturbance
+indicator rather than a standalone current-sensor validation.
 
 ## 5. Known limitations
 

@@ -1,0 +1,403 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "results/reference/reference.schema.json",
+  "title": "vessel-gnc reference artifacts",
+  "description": "Single formal contract for the four committed reference JSON artifacts (config, metrics, benchmark, metadata). Each artifact is selected by a oneOf branch on artifact_type. All numbers are finite native JSON numbers (NaN/Infinity are rejected at generation time by writing with allow_nan=False); SI units are encoded in the field names. additionalProperties is false at every stable public level so that drifting schemas are caught by validation.",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/$defs/config" },
+    { "$ref": "#/$defs/metrics" },
+    { "$ref": "#/$defs/benchmark" },
+    { "$ref": "#/$defs/metadata" }
+  ],
+  "$defs": {
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$schema", "artifact_type", "schema_version", "scenario", "git_commit"],
+      "properties": {
+        "$schema": { "type": "string", "description": "Path to results/reference/reference.schema.json from the repository root." },
+        "artifact_type": { "const": "config" },
+        "schema_version": { "const": 1 },
+        "git_commit": { "type": "string", "description": "git rev-parse HEAD at generation time; the tree may additionally be dirty (see metadata.source_fingerprint)." },
+        "scenario": { "$ref": "#/$defs/scenario" }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "components", "description", "revision", "seed",
+        "duration_s", "integration_dt_s", "control_periods", "path",
+        "environment", "sensors", "nmpc", "los", "nominal_params",
+        "truth_params", "render"
+      ],
+      "properties": {
+        "id": { "const": "scenario_v1_mismatch_disturbance" },
+        "components": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "environment", "controller_los", "controller_nmpc", "estimator"],
+          "properties": {
+            "path": { "const": "s_curve_v1" },
+            "environment": { "const": "rotating_current_gusts_v1" },
+            "controller_los": { "const": "los_pid_v1" },
+            "controller_nmpc": { "const": "nominal_nmpc_v1" },
+            "estimator": { "const": "augmented_current_ekf_v1" }
+          }
+        },
+        "description": { "type": "string" },
+        "revision": { "const": 1 },
+        "seed": { "const": 42 },
+        "duration_s": { "const": 120.0 },
+        "integration_dt_s": { "const": 0.01 },
+        "control_periods": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["los_s", "nmpc_s"],
+          "properties": {
+            "los_s": { "const": 0.1 },
+            "nmpc_s": { "const": 0.2 }
+          }
+        },
+        "path": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "speed_ref_m_s", "lookahead_m", "waypoints"],
+          "properties": {
+            "name": { "const": "s_curve" },
+            "speed_ref_m_s": { "const": 1.3 },
+            "lookahead_m": { "const": 8.0 },
+            "waypoints": {
+              "type": "array",
+              "minItems": 2,
+              "items": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": { "type": "number" }
+              }
+            }
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "current_base_east_m_s", "current_amplitude_m_s", "current_period_s",
+            "current_phase_rad", "wind_mean_east_N", "gust_times_s",
+            "gust_peak_N", "gust_width_s"
+          ],
+          "properties": {
+            "current_base_east_m_s": { "const": 0.12 },
+            "current_amplitude_m_s": { "const": 0.06 },
+            "current_period_s": { "const": 80.0 },
+            "current_phase_rad": { "const": 0.0 },
+            "wind_mean_east_N": { "const": 3.0 },
+            "gust_times_s": {
+              "type": "array",
+              "items": { "type": "number" }
+            },
+            "gust_peak_N": { "const": 4.0 },
+            "gust_width_s": { "const": 5.0 }
+          }
+        },
+        "sensors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gnss_period_s", "compass_period_s", "speed_period_s", "gyro_period_s",
+            "gnss_sigma_m", "compass_sigma_rad", "speed_sigma_m_s", "gyro_sigma_rad_s"
+          ],
+          "properties": {
+            "gnss_period_s": { "const": 0.2 },
+            "compass_period_s": { "const": 0.1 },
+            "speed_period_s": { "const": 0.1 },
+            "gyro_period_s": { "const": 0.1 },
+            "gnss_sigma_m": { "const": 0.5 },
+            "compass_sigma_rad": { "const": 0.0175 },
+            "speed_sigma_m_s": { "const": 0.05 },
+            "gyro_sigma_rad_s": { "const": 0.01 }
+          }
+        },
+        "nmpc": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "horizon", "dt_s", "substeps", "q_position", "q_heading",
+            "r_thrust", "r_moment", "s_thrust", "s_moment", "warm_start"
+          ],
+          "properties": {
+            "horizon": { "const": 25 },
+            "dt_s": { "const": 0.4 },
+            "substeps": { "const": 2 },
+            "q_position": { "const": 8.0, "description": "position error weight [1/m^2]" },
+            "q_heading": { "const": 1.5, "description": "heading error weight [1/rad^2]" },
+            "r_thrust": { "const": 2e-3, "description": "control weight [1/N^2]" },
+            "r_moment": { "const": 1e-2, "description": "control weight [1/(N m)^2]" },
+            "s_thrust": { "const": 5e-3, "description": "control-rate weight [1/N^2]" },
+            "s_moment": { "const": 5e-2, "description": "control-rate weight [1/(N m)^2]" },
+            "warm_start": { "const": true }
+          }
+        },
+        "los": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "heading_gains", "speed_gains", "heading_moment_limit_Nm",
+            "speed_thrust_limit_N", "period_s"
+          ],
+          "properties": {
+            "heading_gains": { "$ref": "#/$defs/pidGains" },
+            "speed_gains": { "$ref": "#/$defs/pidGains" },
+            "heading_moment_limit_Nm": { "const": 6.0 },
+            "speed_thrust_limit_N": { "const": 40.0 },
+            "period_s": { "const": 0.1 }
+          }
+        },
+        "nominal_params": { "$ref": "#/$defs/modelParams" },
+        "truth_params": { "$ref": "#/$defs/modelParams" },
+        "render": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "fps", "hero_stride_frames", "hero_wake_duration_s", "horizon_shot_times_s"
+          ],
+          "properties": {
+            "fps": { "const": 12 },
+            "hero_stride_frames": { "const": 40 },
+            "hero_wake_duration_s": { "const": 12.0 },
+            "horizon_shot_times_s": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "pidGains": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kp", "ki", "kd"],
+      "properties": {
+        "kp": { "type": "number" },
+        "ki": { "type": "number" },
+        "kd": { "type": "number" }
+      }
+    },
+    "modelParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mass_kg", "inertia_z_kg_m2", "added_mass_x_kg", "added_mass_y_kg",
+        "added_inertia_z_kg_m2", "lin_damping_u_N_s_m", "lin_damping_v_N_s_m",
+        "lin_damping_r_N_m_s_rad", "quad_damping_u_N_s2_m2",
+        "quad_damping_v_N_s2_m2", "quad_damping_r_N_m_s2_rad2",
+        "thrust_min_N", "thrust_max_N", "moment_min_Nm", "moment_max_Nm",
+        "thrust_time_constant_s", "moment_time_constant_s",
+        "thrust_rate_limit_N_s", "moment_rate_limit_N_m_s"
+      ],
+      "properties": {
+        "mass_kg": { "type": "number", "exclusiveMinimum": 0 },
+        "inertia_z_kg_m2": { "type": "number", "exclusiveMinimum": 0 },
+        "added_mass_x_kg": { "type": "number", "minimum": 0 },
+        "added_mass_y_kg": { "type": "number", "minimum": 0 },
+        "added_inertia_z_kg_m2": { "type": "number", "minimum": 0 },
+        "lin_damping_u_N_s_m": { "type": "number", "minimum": 0 },
+        "lin_damping_v_N_s_m": { "type": "number", "minimum": 0 },
+        "lin_damping_r_N_m_s_rad": { "type": "number", "minimum": 0 },
+        "quad_damping_u_N_s2_m2": { "type": "number", "minimum": 0 },
+        "quad_damping_v_N_s2_m2": { "type": "number", "minimum": 0 },
+        "quad_damping_r_N_m_s2_rad2": { "type": "number", "minimum": 0 },
+        "thrust_min_N": { "type": "number" },
+        "thrust_max_N": { "type": "number" },
+        "moment_min_Nm": { "type": "number" },
+        "moment_max_Nm": { "type": "number" },
+        "thrust_time_constant_s": { "type": "number", "exclusiveMinimum": 0 },
+        "moment_time_constant_s": { "type": "number", "exclusiveMinimum": 0 },
+        "thrust_rate_limit_N_s": { "type": "number", "minimum": 0 },
+        "moment_rate_limit_N_m_s": { "type": "number", "minimum": 0 }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$schema", "artifact_type", "schema_version", "scenario_id", "controllers", "estimator"],
+      "properties": {
+        "$schema": { "type": "string", "description": "Path to results/reference/reference.schema.json from the repository root." },
+        "artifact_type": { "const": "metrics" },
+        "schema_version": { "const": 1 },
+        "scenario_id": { "const": "scenario_v1_mismatch_disturbance" },
+        "controllers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["los_pid_v1", "nominal_nmpc_v1"],
+          "properties": {
+            "los_pid_v1": { "$ref": "#/$defs/controllerMetrics" },
+            "nominal_nmpc_v1": { "$ref": "#/$defs/controllerMetrics" }
+          }
+        },
+        "estimator": { "$ref": "#/$defs/estimatorMetrics" }
+      }
+    },
+    "controllerMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cross_track_rms_m", "cross_track_p95_m", "cross_track_max_m",
+        "heading_error_rms_rad", "heading_error_max_rad",
+        "thrust_rms_N", "thrust_max_N", "moment_rms_Nm", "moment_max_Nm",
+        "thrust_saturation_duration_s", "moment_saturation_duration_s",
+        "any_saturation_duration_s"
+      ],
+      "properties": {
+        "cross_track_rms_m": { "type": "number", "minimum": 0, "description": "RMS of the absolute signed cross-track error [m]" },
+        "cross_track_p95_m": { "type": "number", "minimum": 0, "description": "95th percentile of the absolute cross-track error [m]" },
+        "cross_track_max_m": { "type": "number", "minimum": 0, "description": "maximum absolute cross-track error [m]" },
+        "heading_error_rms_rad": { "type": "number", "minimum": 0, "description": "RMS of the wrapped LOS heading error [rad]" },
+        "heading_error_max_rad": { "type": "number", "minimum": 0, "description": "maximum absolute wrapped heading error [rad]" },
+        "thrust_rms_N": { "type": "number", "minimum": 0, "description": "RMS of the applied (post-actuator) thrust [N]" },
+        "thrust_max_N": { "type": "number", "minimum": 0, "description": "maximum absolute applied thrust [N]" },
+        "moment_rms_Nm": { "type": "number", "minimum": 0, "description": "RMS of the applied (post-actuator) yaw moment [N m]" },
+        "moment_max_Nm": { "type": "number", "minimum": 0, "description": "maximum absolute applied yaw moment [N m]" },
+        "thrust_saturation_duration_s": { "type": "number", "minimum": 0, "description": "total time with the applied thrust within 1% of a ModelParams bound span [s]" },
+        "moment_saturation_duration_s": { "type": "number", "minimum": 0, "description": "total time with the applied yaw moment within 1% of a ModelParams bound span [s]" },
+        "any_saturation_duration_s": { "type": "number", "minimum": 0, "description": "total time with either channel saturated (union, no double counting) [s]" }
+      }
+    },
+    "estimatorMetrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "position_error_rms_m", "position_error_max_m", "yaw_rate_error_rms_rad_s",
+        "current_error_rms_m_s", "current_error_max_m_s", "current_error_transient_s"
+      ],
+      "properties": {
+        "position_error_rms_m": { "type": "number", "minimum": 0, "description": "full-run RMS position estimation error [m]" },
+        "position_error_max_m": { "type": "number", "minimum": 0, "description": "full-run maximum position estimation error [m]" },
+        "yaw_rate_error_rms_rad_s": { "type": "number", "minimum": 0, "description": "full-run RMS yaw-rate estimation error [rad/s]" },
+        "current_error_rms_m_s": { "type": "number", "minimum": 0, "description": "RMS current-vector estimation error after the transient [m/s]" },
+        "current_error_max_m_s": { "type": "number", "minimum": 0, "description": "maximum current-vector estimation error after the transient [m/s]" },
+        "current_error_transient_s": { "const": 20.0, "description": "explicit transient discarded before current-error statistics [s]" }
+      }
+    },
+    "benchmark": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$schema", "artifact_type", "schema_version", "benchmark_id", "git_commit", "workloads"],
+      "properties": {
+        "$schema": { "type": "string", "description": "Path to results/reference/reference.schema.json from the repository root." },
+        "artifact_type": { "const": "benchmark" },
+        "schema_version": { "const": 1 },
+        "benchmark_id": { "type": "string" },
+        "git_commit": { "type": "string", "description": "git rev-parse HEAD at generation time; the tree may additionally be dirty (see metadata.source_fingerprint)." },
+        "workloads": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kernel", "simulation", "nmpc"],
+          "properties": {
+            "kernel": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "ns_per_step", "steps"],
+              "properties": {
+                "name": { "const": "cpp_rk4_propagation" },
+                "ns_per_step": { "type": "number", "exclusiveMinimum": 0, "description": "C++ RK4 kernel cost through the pybind11 binding [ns/step], machine-dependent" },
+                "steps": { "type": "integer", "exclusiveMinimum": 0 }
+              }
+            },
+            "simulation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "duration_s", "wall_time_ms"],
+              "properties": {
+                "name": { "const": "python_orchestration_1000s" },
+                "duration_s": { "const": 1000.0 },
+                "wall_time_ms": { "type": "number", "exclusiveMinimum": 0, "description": "wall time of the Python orchestration loop [ms], machine-dependent" }
+              }
+            },
+            "nmpc": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name", "duration_s", "control_period_s", "samples", "mean_ms",
+                "median_ms", "p95_ms", "max_ms", "failed_solves", "final_status_histogram"
+              ],
+              "properties": {
+                "name": { "const": "nominal_s_curve_nmpc_60s" },
+                "duration_s": { "const": 60.0, "description": "benchmark workload length, distinct from the 120 s reference scenario" },
+                "control_period_s": { "const": 0.2 },
+                "samples": { "type": "integer", "exclusiveMinimum": 0 },
+                "mean_ms": { "type": "number", "exclusiveMinimum": 0 },
+                "median_ms": { "type": "number", "exclusiveMinimum": 0 },
+                "p95_ms": { "type": "number", "exclusiveMinimum": 0 },
+                "max_ms": { "type": "number", "exclusiveMinimum": 0 },
+                "failed_solves": { "type": "integer", "minimum": 0, "description": "solves whose final IPOPT status is not an accepted one" },
+                "final_status_histogram": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "additionalProperties": { "type": "integer", "minimum": 0 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema", "artifact_type", "schema_version", "generated_at_utc",
+        "software", "platform", "source_fingerprint", "artifacts"
+      ],
+      "properties": {
+        "$schema": { "type": "string", "description": "Path to results/reference/reference.schema.json from the repository root." },
+        "artifact_type": { "const": "metadata" },
+        "schema_version": { "const": 1 },
+        "generated_at_utc": { "type": "string", "format": "date-time" },
+        "software": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["python", "numpy", "matplotlib", "pillow", "casadi", "vessel_gnc"],
+          "properties": {
+            "python": { "type": "string" },
+            "numpy": { "type": "string" },
+            "matplotlib": { "type": "string" },
+            "pillow": { "type": "string" },
+            "casadi": { "type": "string" },
+            "vessel_gnc": { "type": "string" }
+          }
+        },
+        "platform": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["os", "machine"],
+          "properties": {
+            "os": { "type": "string" },
+            "machine": { "type": "string" }
+          }
+        },
+        "source_fingerprint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["dirty", "files", "sha256"],
+          "properties": {
+            "dirty": { "type": "boolean", "description": "whether tracked source files were modified at generation time" },
+            "files": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "combined SHA-256 of the ordered source-file list" }
+          }
+        },
+        "artifacts": {
+          "type": "object",
+          "description": "SHA-256 of every committed generated asset and of the three non-metadata JSON artifacts; metadata.json is excluded from its own hash to avoid a cycle.",
+          "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    }
+  }
+}

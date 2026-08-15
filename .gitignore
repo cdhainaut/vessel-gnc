@@ -12,13 +12,19 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# Generated outputs
-results/
+# Generated outputs: only the committed reference JSON artifacts are kept
+results/*
+!results/reference/
+results/reference/*
+!results/reference/*.json
 
 # Local agent context and internal roadmap (not part of the public repo)
 AGENTS.md
 vessel-gnc-plan.md
 vessel-gnc — Portfolio Development Plan.md
+context.md
+plan.md
+vessel-gnc-differentiation-roadmap.md
 
 # Editors / OS
 .vscode/

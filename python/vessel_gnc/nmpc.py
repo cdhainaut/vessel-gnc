@@ -148,6 +148,17 @@ class VesselNmpc:
         self.last_controls = None
         self.last_trajectory = None
 
+    @property
+    def last_solve_succeeded(self) -> bool:
+        """Whether the most recent solve ended with an accepted IPOPT status.
+
+        True after a solve that returned with ``Solve_Succeeded`` or
+        ``Solved_To_Acceptable_Level``; False before the first solve and
+        after any other final status. Read-only: never changes solve
+        behaviour.
+        """
+        return self._ok(self.last_status)
+
     def model_step(self, x: np.ndarray, u: np.ndarray) -> np.ndarray:
         """One RK4 model step on the 8-state model (vessel + actuator).
 

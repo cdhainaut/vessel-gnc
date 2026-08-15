@@ -55,14 +55,48 @@ Status legend:
 | Actuator bounds respected, straight-line tracking | verified | `tests/test_nmpc.py` |
 | S-curve regression with unknown current/wind | validated | `tests/test_nmpc.py` |
 | Solve-time budget, determinism, warm-start shift | verified | `tests/test_nmpc.py` |
-| Flagship comparison (NMPC vs LOS, EKF in the loop) | validated | `examples/05_nmpc_demo.py` → `results/comparison_metrics.json` |
+| Flagship comparison (NMPC vs LOS, EKF in the loop) | validated | `results/reference/metrics.json` (scenario `scenario_v1_mismatch_disturbance`) |
 
 ## Performance
 
-| Measurement | Result | Location |
-|---|---|---|
-| C++ RK4 kernel | ~134 ns/step | `benchmarks/benchmark_core.cpp` |
-| 1000 s simulation, Python loop | ~200 ms | `benchmarks/benchmark_simulation.py` |
-| NMPC solve time | mean ~80 ms, p95 ~105 ms | `benchmarks/benchmark_simulation.py` |
+Wall-clock measurements are machine-dependent by construction and are
+therefore never part of the deterministic validation record: they live only
+in `results/reference/benchmark.json` and the generated table below. No
+timing value from the flagship run is ever copied into the deterministic
+metrics.
 
-Machine-dependent; regenerate with the benchmark scripts for fresh numbers.
+<!-- generated:reference-benchmark-v1:start -->
+| Metric | Result |
+|---|---:|
+| C++ RK4 propagation (vessel + actuator) | **482.9 ns/step** |
+| 1000 s simulation (Python loop) | **342 ms** |
+| NMPC mean / p95 / max solve time [ms] | **96.0 / 118.3 / 210.8** |
+
+Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v1`, 300 samples, 0 failed solves). The 5 Hz NMPC control period corresponds to a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
+
+<!-- generated:reference-benchmark-v1:end -->
+
+## Reference provenance
+
+Every public number in this repository is generated from the committed
+reference artifacts — nothing is hand-edited between the generated markers.
+Scenario, seed, configuration, source revision and fingerprint:
+
+<!-- generated:reference-provenance-v1:start -->
+| Item | Value |
+|---|---|
+| Scenario | `scenario_v1_mismatch_disturbance` (revision 1) |
+| Seed | 42 |
+| Duration / integration step | 120.0 s / 0.01 s |
+| Controllers | `los_pid_v1` · `nominal_nmpc_v1` |
+| Estimator | `augmented_current_ekf_v1` |
+| Schema | `results/reference/reference.schema.json` (version 1) |
+| Deterministic metrics | `results/reference/metrics.json` |
+| Machine-dependent benchmark | `results/reference/benchmark.json` |
+| Generated at (UTC) | 2026-08-14T01:01:57+00:00 |
+| Source commit | `0f44547ad79aee773ed9df4ffda2994dafbfc650` |
+| Source fingerprint | dirty: true · `3d7bdddc8b4ad9acb32f95760991fadf36f1351a67a63fa16ca793a68a9e64af` |
+
+`git_commit` and the `dirty` flag record the repository state at generation time; the source fingerprint is content-based and authoritative. After committing source changes, either regenerate the artifacts (`python tools/generate_reference_results.py`) or keep the source contents unchanged: `--check` compares only the content fingerprint, so a clean checkout at a new commit passes when the source contents are unchanged and fails when they changed. `--check` validates schema, scenario, source fingerprint, artifact hashes and marker bodies without any simulation; `--verify-determinism` runs one fresh 120 s reference and compares it with `results/reference/metrics.json`: the LOS baseline metrics exactly, and the NMPC/estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its full-precision iterates may differ in the last ulps), reporting the worst offending key and deviation on failure. Reproducibility is guaranteed within the software environment recorded in `metadata.json` (`software` block): regenerating in another environment requires a fresh `--verify-determinism` in that environment before the committed metrics can be trusted.
+
+<!-- generated:reference-provenance-v1:end -->

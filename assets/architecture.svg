@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 480" font-family="Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 580" font-family="Helvetica, Arial, sans-serif">
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
             orient="auto-start-reverse">
@@ -10,51 +10,100 @@
     </marker>
   </defs>
 
-  <!-- Reference -->
-  <rect x="60" y="90" width="180" height="64" rx="8" fill="#edf2f7" stroke="#718096" stroke-width="1.5"/>
-  <text x="150" y="116" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">Reference path</text>
-  <text x="150" y="136" text-anchor="middle" font-size="12" fill="#4a5568">waypoints · mission clock</text>
+  <!-- ============ Top row: guidance -> actuation -> truth plant ============ -->
 
-  <!-- NMPC -->
-  <rect x="420" y="90" width="230" height="64" rx="8" fill="#eaf3ff" stroke="#2b6cb0" stroke-width="1.5"/>
-  <text x="535" y="116" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">NMPC</text>
-  <text x="535" y="136" text-anchor="middle" font-size="12" fill="#2b6cb0">CasADi · IPOPT · 5 Hz</text>
+  <!-- Reference path -->
+  <rect x="40" y="56" width="180" height="64" rx="8" fill="#edf2f7" stroke="#718096" stroke-width="1.5"/>
+  <text x="130" y="80" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">Reference path</text>
+  <text x="130" y="100" text-anchor="middle" font-size="12" fill="#4a5568">waypoints · mission clock</text>
 
-  <!-- Vessel (C++ core) -->
-  <rect x="730" y="90" width="200" height="64" rx="8" fill="#fff4e6" stroke="#c05621" stroke-width="1.5"/>
-  <text x="830" y="116" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">Vessel 3-DOF</text>
-  <text x="830" y="136" text-anchor="middle" font-size="12" fill="#c05621">dynamics · RK4 · C++20</text>
+  <!-- LOS baseline (nominal params) -->
+  <rect x="300" y="32" width="170" height="56" rx="8" fill="#eaf3ff" stroke="#2b6cb0" stroke-width="1.5"/>
+  <text x="385" y="54" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">LOS baseline</text>
+  <text x="385" y="72" text-anchor="middle" font-size="11" fill="#2b6cb0">PID heading · PI surge</text>
+  <text x="385" y="86" text-anchor="middle" font-size="10" fill="#2b6cb0">nominal params</text>
 
-  <!-- EKF -->
-  <rect x="420" y="330" width="230" height="64" rx="8" fill="#eaf3ff" stroke="#2b6cb0" stroke-width="1.5"/>
-  <text x="535" y="356" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">EKF</text>
-  <text x="535" y="376" text-anchor="middle" font-size="12" fill="#2b6cb0">GNSS · compass · speed · gyro</text>
+  <!-- NMPC (nominal params) -->
+  <rect x="300" y="108" width="170" height="56" rx="8" fill="#eaf3ff" stroke="#2b6cb0" stroke-width="1.5"/>
+  <text x="385" y="130" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">NMPC</text>
+  <text x="385" y="148" text-anchor="middle" font-size="11" fill="#2b6cb0">CasADi · IPOPT · 5 Hz</text>
+  <text x="385" y="162" text-anchor="middle" font-size="10" fill="#2b6cb0">nominal params</text>
 
-  <!-- Arrows: reference -> NMPC -->
-  <line x1="240" y1="122" x2="414" y2="122" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="327" y="110" text-anchor="middle" font-size="12" fill="#4a5568">path</text>
+  <!-- Actuator dynamics (C++ core) -->
+  <rect x="540" y="56" width="150" height="64" rx="8" fill="#fff4e6" stroke="#c05621" stroke-width="1.5"/>
+  <text x="615" y="80" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">Actuator dynamics</text>
+  <text x="615" y="100" text-anchor="middle" font-size="12" fill="#c05621">rate limits · saturation</text>
 
-  <!-- Arrows: NMPC -> vessel -->
-  <line x1="650" y1="122" x2="724" y2="122" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="687" y="110" text-anchor="middle" font-size="12" fill="#4a5568">τ = [T, N]</text>
+  <!-- Truth plant (C++ core, perturbed params) -->
+  <rect x="760" y="56" width="170" height="64" rx="8" fill="#fff4e6" stroke="#c05621" stroke-width="1.5"/>
+  <text x="845" y="80" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">Truth plant</text>
+  <text x="845" y="100" text-anchor="middle" font-size="12" fill="#c05621">3-DOF dynamics · RK4</text>
+  <text x="845" y="116" text-anchor="middle" font-size="10" fill="#c05621">perturbed (truth) params</text>
 
-  <!-- Arrows: vessel -> sensors -> EKF -->
-  <path d="M 830 154 L 830 260 L 650 260 L 650 324" fill="none" stroke="#4a5568"
-        stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="752" y="250" text-anchor="middle" font-size="12" fill="#4a5568">noisy measurements</text>
+  <!-- ============ Bottom row: sensors, EKF, environment, mismatch ============ -->
 
-  <!-- Arrows: EKF -> NMPC (estimate feedback) -->
-  <line x1="535" y1="330" x2="535" y2="160" stroke="#2b6cb0" stroke-width="1.5"
+  <!-- Sensors -->
+  <rect x="300" y="330" width="170" height="64" rx="8" fill="#eaf3ff" stroke="#2b6cb0" stroke-width="1.5"/>
+  <text x="385" y="354" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">Sensors</text>
+  <text x="385" y="374" text-anchor="middle" font-size="11" fill="#2b6cb0">GNSS · compass · speed · gyro</text>
+  <text x="385" y="390" text-anchor="middle" font-size="10" fill="#2b6cb0">asynchronous · noisy</text>
+
+  <!-- EKF (nominal params) -->
+  <rect x="300" y="420" width="170" height="64" rx="8" fill="#eaf3ff" stroke="#2b6cb0" stroke-width="1.5"/>
+  <text x="385" y="444" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">EKF</text>
+  <text x="385" y="464" text-anchor="middle" font-size="12" fill="#2b6cb0">augmented current</text>
+  <text x="385" y="480" text-anchor="middle" font-size="10" fill="#2b6cb0">nominal params</text>
+
+  <!-- Environment: enters the truth plant only -->
+  <rect x="760" y="330" width="170" height="64" rx="8" fill="#edf2f7" stroke="#718096" stroke-width="1.5"/>
+  <text x="845" y="354" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">Environment</text>
+  <text x="845" y="374" text-anchor="middle" font-size="12" fill="#4a5568">current · wind</text>
+  <text x="845" y="390" text-anchor="middle" font-size="10" fill="#4a5568">deterministic · time-varying</text>
+
+  <!-- Model mismatch: enters the truth plant only -->
+  <rect x="760" y="430" width="170" height="64" rx="8" fill="#edf2f7" stroke="#718096" stroke-width="1.5"/>
+  <text x="845" y="454" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">Model mismatch</text>
+  <text x="845" y="474" text-anchor="middle" font-size="12" fill="#4a5568">truth − nominal params</text>
+
+  <!-- ============ Arrows: reference -> LOS/NMPC ============ -->
+  <line x1="224" y1="70" x2="296" y2="56" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="248" y="52" text-anchor="middle" font-size="12" fill="#4a5568">path</text>
+  <line x1="224" y1="98" x2="296" y2="122" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="248" y="140" text-anchor="middle" font-size="12" fill="#4a5568">path</text>
+
+  <!-- ============ Arrows: LOS/NMPC -> actuator ============ -->
+  <line x1="474" y1="60" x2="536" y2="80" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="474" y1="136" x2="536" y2="104" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="505" y="95" text-anchor="middle" font-size="12" fill="#4a5568">τ = [T, N]</text>
+
+  <!-- ============ Arrow: actuator -> truth plant ============ -->
+  <line x1="694" y1="88" x2="756" y2="88" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="725" y="78" text-anchor="middle" font-size="12" fill="#4a5568">applied τ</text>
+
+  <!-- ============ Arrows: environment / mismatch -> truth plant ============ -->
+  <line x1="800" y1="326" x2="800" y2="124" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="812" y="228" font-size="11" fill="#4a5568">current · wind</text>
+  <line x1="890" y1="426" x2="890" y2="124" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="902" y="280" font-size="11" fill="#4a5568">parameter perturbation</text>
+
+  <!-- ============ Arrows: truth state -> sensors -> EKF ============ -->
+  <line x1="770" y1="120" x2="470" y2="326" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="598" y="214" text-anchor="middle" font-size="12" fill="#4a5568">truth state</text>
+  <line x1="385" y1="330" x2="385" y2="416" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="397" y="376" font-size="11" fill="#4a5568">noisy measurements</text>
+
+  <!-- ============ Arrows: EKF -> LOS/NMPC (state estimate feedback) ============ -->
+  <path d="M 286 452 L 286 74 L 296 74" fill="none" stroke="#2b6cb0" stroke-width="1.5"
         marker-end="url(#arrow-blue)"/>
-  <text x="547" y="248" font-size="12" fill="#2b6cb0">x̂</text>
+  <path d="M 286 452 L 286 148 L 296 148" fill="none" stroke="#2b6cb0" stroke-width="1.5"
+        marker-end="url(#arrow-blue)"/>
+  <text x="276" y="300" text-anchor="end" font-size="12" fill="#2b6cb0">estimated state x̂</text>
 
-  <!-- Disturbances -->
-  <line x1="960" y1="60" x2="934" y2="84" stroke="#4a5568" stroke-width="1.5" marker-end="url(#arrow)"/>
-  <text x="905" y="52" text-anchor="end" font-size="12" fill="#4a5568">current · wind</text>
-
-  <!-- Legend -->
-  <rect x="60" y="410" width="18" height="14" rx="3" fill="#eaf3ff" stroke="#2b6cb0" stroke-width="1.2"/>
-  <text x="86" y="421" font-size="12" fill="#1a202c">Python — guidance · estimation · optimization · orchestration</text>
-  <rect x="60" y="440" width="18" height="14" rx="3" fill="#fff4e6" stroke="#c05621" stroke-width="1.2"/>
-  <text x="86" y="451" font-size="12" fill="#1a202c">C++20 core — performance-critical physics and numerics</text>
+  <!-- ============ Legend ============ -->
+  <rect x="60" y="516" width="18" height="14" rx="3" fill="#eaf3ff" stroke="#2b6cb0" stroke-width="1.2"/>
+  <text x="86" y="527" font-size="12" fill="#1a202c">Python — guidance · estimation · optimization · orchestration</text>
+  <rect x="60" y="538" width="18" height="14" rx="3" fill="#fff4e6" stroke="#c05621" stroke-width="1.2"/>
+  <text x="86" y="549" font-size="12" fill="#1a202c">C++20 core — performance-critical physics and numerics</text>
+  <rect x="420" y="538" width="18" height="14" rx="3" fill="#edf2f7" stroke="#718096" stroke-width="1.2"/>
+  <text x="446" y="549" font-size="12" fill="#1a202c">Scenario inputs — reference path and deterministic disturbances</text>
 </svg>

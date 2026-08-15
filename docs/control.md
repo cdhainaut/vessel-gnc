@@ -143,6 +143,26 @@ The initial guess is, in order: the previous solution shifted by one step
 through the model, and a drag-balance cruise rollout. The solver falls back
 down the list until one attempt converges (or the wall time is reached).
 
+### Numerical reproducibility
+
+IPOPT runs with `tol = 1e-4` (plus the acceptable-iteration criteria and
+the 0.4 s wall-time cap above). Determinism is therefore a
+*reproducibility contract*, not a promise of bit-identical iterates:
+full-precision IPOPT solutions can legitimately differ in the last ulps
+between runs or environments (threading/BLAS) even when every input is
+identical. The committed reference metrics (docs/validation.md) enforce
+the contract in `--verify-determinism`
+(`python tools/generate_reference_results.py`): the LOS baseline metrics
+must reproduce exactly (no iterative solver), while the NMPC and estimator
+metrics must match within `rtol = 1e-6`, `atol = 1e-6`; a violation is
+reported with the worst offending key and its deviation. The wall-time cap
+bounds the worst-case solve duration (the 5 Hz control period is a 200 ms
+budget) and is machine-dependent: solve times live only in
+`results/reference/benchmark.json`, never in the deterministic metrics.
+Reproducibility holds within the software environment recorded in
+`results/reference/metadata.json` (the `software` block); regenerating in
+another environment requires a fresh `--verify-determinism` run there.
+
 ### Weights
 
 | Weight | Value | Role |
@@ -163,22 +183,52 @@ Automated in `tests/test_nmpc.py`:
 | Straight-line tracking | Calm water: converges to cruise, no lateral drift | Pass |
 | S-curve regression | Current + wind (unknown to the NMPC), 60 s | RMS cross-track < 1 m, max < 3 m |
 | Solve time | 60 s closed loop | mean < 0.2 s, p95 < 0.4 s |
-| Determinism | Same inputs, same warm start -> identical commands | Pass |
+| Determinism | Same inputs, same warm start -> commands agree to abs=1e-5 (IPOPT tol=1e-4, see §5) | Pass |
 | Warm start | Shifted guess = previous solution shifted one step | Pass |
 
-Flagship numbers (example 05, with EKF in the loop, 120 s): RMS cross-track
-1.25 m (LOS: 1.45 m), max 1.73 m (LOS: 2.40 m), mean solve 78 ms, p95 101 ms.
+## 6. Flagship reference metrics
+
+The flagship scenario (`scenario_v1_mismatch_disturbance`, revision 1,
+seed 42) runs both controllers closed loop on EKF estimates for 120.0 s at
+0.01 s integration (controller periods 0.1 s / 0.2 s). The plant uses the
+perturbed truth parameters behind the rate-limited actuator; the environment
+is the rotating current with gusts. The metrics are computed from the
+applied (post-actuator) histories with the saturation definition of
+docs/validation.md: a channel is saturated on a left-closed interval when
+the applied value lies within 1% of the `ModelParams` bound span. All values
+below are deterministic and formatted from `results/reference/metrics.json`;
+solve times are machine-dependent and reported only in the benchmark table.
+
+<!-- generated:reference-controller-comparison-v1:start -->
+| Metric | LOS (PID/PI) | NMPC |
+|---|---:|---:|
+| RMS cross-track error [m] | 0.68 | 0.44 |
+| P95 cross-track error [m] | 0.97 | 0.69 |
+| Max cross-track error [m] | 1.37 | 0.80 |
+| RMS wrapped heading error [deg] | 6.3 | 10.2 |
+| Max wrapped heading error [deg] | 17.7 | 27.2 |
+| RMS applied thrust [N] | 31.8 | 32.6 |
+| Max applied thrust [N] | 38.0 | 58.9 |
+| RMS applied yaw moment [N m] | 1.3 | 2.1 |
+| Max applied yaw moment [N m] | 3.3 | 6.0 |
+| Thrust saturation duration [s] | 0.0 | 0.0 |
+| Yaw-moment saturation duration [s] | 0.0 | 1.9 |
+| Either channel saturated [s] | 0.0 | 1.9 |
+
+Deterministic flagship metrics formatted from `results/reference/metrics.json` (scenario `scenario_v1_mismatch_disturbance`, revision 1, seed 42, 120.0 s at 0.01 s integration). Saturation counts left-closed intervals whose applied value lies within 1% of a `ModelParams` bound span (docs/validation.md). No wall-clock timing appears here: NMPC solve times are machine-dependent and reported separately in the benchmark table.
+
+<!-- generated:reference-controller-comparison-v1:end -->
 
 ## 7. Known limitations
 
 - **No current compensation**: LOS guidance alone does not counteract a
-  steady cross-current; the vessel settles with a small cross-track offset
+  mean current; the vessel settles with a small cross-track offset
   (`~ Delta * V_c / u` on straight segments) and crabs. This is intentional:
   it is the baseline that NMPC will be compared against (plan §13).
 - Single speed reference along the whole path (no speed scheduling).
 - The heading loop does not know the path curvature (no feed-forward yaw
   rate); corners are cut by roughly the lookahead distance.
-- NMPC predicts with the nominal calm-water model: the steady current is not
+- NMPC predicts with the nominal calm-water model: the mean current is not
   predicted (planned extension, plan §12), so a residual crab remains.
 - NMPC has no obstacle constraints and no terminal cost (10 s horizon is long
   relative to the vessel dynamics).

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,9 +18,20 @@ from matplotlib.patches import Polygon
 from matplotlib.transforms import Affine2D
 
 from vessel_gnc import _core
+from vessel_gnc.guidance import project_onto_path
 from vessel_gnc.simulation import EnvironmentPolicy, SimulationResult
 
-__all__ = ["plot_trajectory", "animate_trajectory", "draw_vessel"]
+if TYPE_CHECKING:
+    from vessel_gnc.reference import ReferenceRun
+
+__all__ = [
+    "plot_trajectory",
+    "animate_trajectory",
+    "draw_vessel",
+    "plot_reference_trajectories",
+    "plot_controller_comparison",
+    "plot_current_estimation",
+]
 
 # Hull outline in the body frame [m] (x forward, y starboard): a ~1.5 m long,
 # ~0.5 m beam small-USV shape.
@@ -381,3 +393,289 @@ def animate_trajectory(
         out.parent.mkdir(parents=True, exist_ok=True)
         anim.save(out, writer=animation.PillowWriter(fps=fps), dpi=dpi)
     return anim
+
+
+def plot_reference_trajectories(
+    run: ReferenceRun,
+    output_path: str | os.PathLike[str],
+) -> plt.Figure:
+    """Reference-run trajectory overview: LOS vs NMPC with prediction horizons.
+
+    Draws the reference path, both recorded trajectories, the NMPC
+    prediction horizons (from the recorded ``run.nmpc.horizon`` shots) and
+    the true current sampled at four times along the NMPC trajectory. Saved
+    to ``output_path`` (the ignored results figure of the reference
+    pipeline).
+
+    Args:
+        run: the in-memory reference run.
+        output_path: PNG destination (parent directories are created).
+
+    Returns:
+        The figure.
+
+    Example:
+        >>> from vessel_gnc.reference import run_reference_scenario
+        >>> from vessel_gnc.visualization import plot_reference_trajectories
+        >>> run = run_reference_scenario()  # doctest: +SKIP  (120 s flagship)
+        >>> figure = plot_reference_trajectories(
+        ...     run, "results/reference/nmpc_trajectory.png"
+        ... )  # doctest: +SKIP
+    """
+    path = run.path
+    los_result = run.los.result
+    nmpc_result = run.nmpc.result
+
+    fig, ax = plt.subplots(figsize=(8.0, 6.6))
+    ax.plot(path[:, 0], path[:, 1], "k--", lw=1.2, label="reference path")
+    ax.plot(los_result.x, los_result.y, color="0.6", lw=1.4, label="LOS baseline")
+    ax.plot(nmpc_result.x, nmpc_result.y, color="tab:blue", lw=1.6, label="NMPC")
+    for _, traj in run.nmpc.horizon:
+        ax.plot(traj[0], traj[1], color="tab:cyan", lw=1.0, alpha=0.7)
+    ax.plot(
+        nmpc_result.x[0],
+        nmpc_result.y[0],
+        "o",
+        color="tab:green",
+        ms=8,
+        label="start",
+    )
+    ax.plot(
+        nmpc_result.x[-1],
+        nmpc_result.y[-1],
+        "x",
+        color="tab:red",
+        ms=10,
+        mew=2,
+        label="end (NMPC)",
+    )
+
+    # True current at four spread times, anchored on the NMPC trajectory.
+    t = nmpc_result.t
+    for shot_t in np.linspace(0.0, t[-1], 4):
+        x0 = float(np.interp(shot_t, t, nmpc_result.x))
+        y0 = float(np.interp(shot_t, t, nmpc_result.y))
+        _environment_arrows(
+            ax, run.config.environment.sample(shot_t), x0, y0, annotate=True
+        )
+
+    ax.set_aspect("equal")
+    ax.set_xlabel("x [m] (North)")
+    ax.set_ylabel("y [m] (East)")
+    ax.set_title("NMPC vs LOS path following (EKF estimates)")
+    ax.legend(loc="best", framealpha=0.9)
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    return fig
+
+
+def plot_controller_comparison(
+    run: ReferenceRun,
+    metrics: dict[str, object],
+    output_path: str | os.PathLike[str],
+) -> plt.Figure:
+    """Deterministic LOS-vs-NMPC comparison figure (cross-track, controls).
+
+    Timing is deliberately absent from this figure: wall-clock data lives
+    exclusively in ``benchmark.json`` and the generated benchmark tables.
+    The four panels show the signed cross-track error, the applied surge
+    thrust and yaw moment (with the physical truth-plant actuator bounds)
+    and a metrics table assembled from the deterministic reference metrics.
+
+    Args:
+        run: the in-memory reference run.
+        metrics: the ``reference_metrics(run)`` document (controllers only).
+        output_path: PNG destination (parent directories are created).
+
+    Returns:
+        The figure.
+
+    Example:
+        >>> from vessel_gnc.reference import reference_metrics, run_reference_scenario
+        >>> from vessel_gnc.visualization import plot_controller_comparison
+        >>> run = run_reference_scenario()  # doctest: +SKIP  (120 s flagship)
+        >>> figure = plot_controller_comparison(
+        ...     run, reference_metrics(run), "assets/controller_comparison.png"
+        ... )  # doctest: +SKIP
+    """
+    path = run.path
+    los_result = run.los.result
+    nmpc_result = run.nmpc.result
+    los_metrics = metrics["controllers"]["los_pid_v1"]
+    nmpc_metrics = metrics["controllers"]["nominal_nmpc_v1"]
+    _, _, cross_los = project_onto_path(
+        np.column_stack([los_result.x, los_result.y]), path
+    )
+    _, _, cross_nmpc = project_onto_path(
+        np.column_stack([nmpc_result.x, nmpc_result.y]), path
+    )
+    bounds = run.config.truth_params
+
+    fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.2), constrained_layout=True)
+
+    ax = axes[0, 0]
+    ax.plot(los_result.t, cross_los, color="0.6", lw=1.2, label="LOS")
+    ax.plot(nmpc_result.t, cross_nmpc, color="tab:blue", lw=1.2, label="NMPC")
+    ax.axhline(0.0, color="k", lw=0.8)
+    ax.set_xlabel("t [s]")
+    ax.set_ylabel("cross-track [m]")
+    ax.set_title("Cross-track error (positive = left of path)")
+    ax.legend(loc="best")
+    ax.grid(alpha=0.3)
+
+    ax = axes[0, 1]
+    ax.plot(los_result.t, los_result.thrust, color="0.6", lw=1.0)
+    ax.plot(nmpc_result.t, nmpc_result.thrust, color="tab:blue", lw=1.0)
+    ax.axhline(bounds.thrust_max, color="r", ls=":", lw=1)
+    ax.axhline(bounds.thrust_min, color="r", ls=":", lw=1)
+    ax.set_xlabel("t [s]")
+    ax.set_ylabel("thrust [N]")
+    ax.set_title("Surge thrust (LOS gray, NMPC blue) with physical bounds")
+    ax.grid(alpha=0.3)
+
+    ax = axes[1, 0]
+    ax.plot(los_result.t, los_result.yaw_moment, color="0.6", lw=1.0)
+    ax.plot(nmpc_result.t, nmpc_result.yaw_moment, color="tab:blue", lw=1.0)
+    ax.axhline(bounds.moment_max, color="r", ls=":", lw=1)
+    ax.axhline(bounds.moment_min, color="r", ls=":", lw=1)
+    ax.set_xlabel("t [s]")
+    ax.set_ylabel("yaw moment [N m]")
+    ax.set_title("Yaw moment (LOS gray, NMPC blue) with physical bounds")
+    ax.grid(alpha=0.3)
+
+    ax = axes[1, 1]
+    ax.axis("off")
+    rows = [
+        ("", "LOS", "NMPC"),
+        (
+            "RMS cross-track [m]",
+            f"{los_metrics['cross_track_rms_m']:.2f}",
+            f"{nmpc_metrics['cross_track_rms_m']:.2f}",
+        ),
+        (
+            "Max cross-track [m]",
+            f"{los_metrics['cross_track_max_m']:.2f}",
+            f"{nmpc_metrics['cross_track_max_m']:.2f}",
+        ),
+        (
+            "RMS heading error [deg]",
+            f"{np.degrees(los_metrics['heading_error_rms_rad']):.1f}",
+            f"{np.degrees(nmpc_metrics['heading_error_rms_rad']):.1f}",
+        ),
+        (
+            "RMS thrust [N]",
+            f"{los_metrics['thrust_rms_N']:.1f}",
+            f"{nmpc_metrics['thrust_rms_N']:.1f}",
+        ),
+        (
+            "Max yaw moment [N m]",
+            f"{los_metrics['moment_max_Nm']:.1f}",
+            f"{nmpc_metrics['moment_max_Nm']:.1f}",
+        ),
+        (
+            "Any saturation [s]",
+            f"{los_metrics['any_saturation_duration_s']:.1f}",
+            f"{nmpc_metrics['any_saturation_duration_s']:.1f}",
+        ),
+    ]
+    table = ax.table(cellText=rows, loc="center", cellLoc="center")
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.0, 1.6)
+    ax.set_title("Comparison (deterministic metrics)")
+
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    return fig
+
+
+def plot_current_estimation(
+    run: ReferenceRun,
+    output_path: str | os.PathLike[str],
+) -> plt.Figure:
+    """Ambient-current estimation figure from the NMPC run's EKF history.
+
+    True (solid) and estimated (dashed) current components over time plus
+    the current-vector error norm, with the discarded estimator transient
+    shaded. Rendered from ``run.nmpc.estimator`` so it shares the exact
+    reference scenario and seed of the other flagship assets.
+
+    Args:
+        run: the in-memory reference run.
+        output_path: PNG destination (parent directories are created).
+
+    Returns:
+        The figure.
+
+    Example:
+        >>> from vessel_gnc.reference import run_reference_scenario
+        >>> from vessel_gnc.visualization import plot_current_estimation
+        >>> run = run_reference_scenario()  # doctest: +SKIP  (120 s flagship)
+        >>> figure = plot_current_estimation(
+        ...     run, "assets/current_estimation.png"
+        ... )  # doctest: +SKIP
+    """
+    t = run.nmpc.estimator.t
+    true = run.nmpc.estimator.current_true
+    estimate = run.nmpc.estimator.current_estimate
+    transient = run.config.estimator_transient_s
+    error = np.hypot(estimate[:, 0] - true[:, 0], estimate[:, 1] - true[:, 1])
+
+    fig, axes = plt.subplots(
+        3, 1, figsize=(7.2, 7.8), sharex=True, constrained_layout=True
+    )
+
+    ax = axes[0]
+    ax.plot(t, true[:, 0], color="tab:orange", lw=1.4, label="true (north)")
+    ax.plot(
+        t,
+        estimate[:, 0],
+        color="tab:orange",
+        lw=1.2,
+        ls="--",
+        label="estimated (north)",
+    )
+    ax.set_ylabel("current [m/s]")
+    ax.set_title("Ambient current estimated by the augmented EKF")
+    ax.legend(loc="best", framealpha=0.9)
+    ax.grid(alpha=0.3)
+
+    ax = axes[1]
+    ax.plot(t, true[:, 1], color="tab:blue", lw=1.4, label="true (east)")
+    ax.plot(
+        t,
+        estimate[:, 1],
+        color="tab:blue",
+        lw=1.2,
+        ls="--",
+        label="estimated (east)",
+    )
+    ax.set_ylabel("current [m/s]")
+    ax.legend(loc="best", framealpha=0.9)
+    ax.grid(alpha=0.3)
+
+    ax = axes[2]
+    ax.plot(t, error, color="0.3", lw=1.4)
+    ax.axvspan(0.0, transient, color="0.85", zorder=0)
+    ax.axvline(
+        transient,
+        color="k",
+        ls=":",
+        lw=1,
+        label=f"transient {transient:.0f} s (excluded)",
+    )
+    ax.set_xlabel("t [s]")
+    ax.set_ylabel("current error [m/s]")
+    ax.set_title("Current-vector estimation error")
+    ax.legend(loc="best", framealpha=0.9)
+    ax.grid(alpha=0.3)
+
+    out = Path(output_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    return fig

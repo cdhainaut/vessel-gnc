@@ -10,22 +10,31 @@ surface vessels.
 
 ![Hero: NMPC path following with predicted horizon](assets/hero.gif)
 
-*An autonomous surface vessel follows a curved reference path under a steady
-cross-current and beam wind. The controller runs on EKF estimates from noisy
-sensors; the cyan line is the NMPC's 10 s predicted horizon, re-solved at
-5 Hz.*
+*An autonomous surface vessel follows an S-curve reference path under a
+rotating current and wind gusts — disturbances that are unknown to the
+controllers and to the filter. The vessel is controlled from EKF estimates
+of noisy sensors; the cyan lines are the NMPC's 10 s predicted horizons,
+re-solved at 5 Hz.*
 
 **3-DOF dynamics · EKF · LOS/PID · NMPC · C++20 · CasADi**
 
 ## Measured performance
 
+<!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **~135 ns/step** |
-| 1000 s simulation (Python loop) | **~400 ms** |
-| NMPC mean / p95 solve time | **155 / 195 ms** (5 Hz budget) |
+| C++ RK4 propagation (vessel + actuator) | **482.9 ns/step** |
+| 1000 s simulation (Python loop) | **342 ms** |
+| NMPC mean / p95 / max solve time [ms] | **96.0 / 118.3 / 210.8** |
 
-Machine-dependent; regenerate with `python benchmarks/benchmark_simulation.py`.
+Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v1`, 300 samples, 0 failed solves). The 5 Hz NMPC control period corresponds to a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
+
+<!-- generated:reference-benchmark-v1:end -->
+
+Deterministic tracking and estimator metrics are kept strictly separate from
+these wall-clock numbers: they live in `results/reference/metrics.json` and
+are reproduced in the [Demo](#demo) table and in `docs/control.md`,
+`docs/estimation.md` and `docs/validation.md`.
 
 ## Demo
 
@@ -43,18 +52,29 @@ wind gusts) and the controllers and the filter use the nominal model — they
 never see the true state or the true disturbance. The augmented EKF
 estimates the ambient current online.
 
+<!-- generated:reference-controller-comparison-v1:start -->
 | Metric | LOS (PID/PI) | NMPC |
 |---|---:|---:|
-| RMS cross-track error [m] | 0.68 | **0.44** |
-| Max cross-track error [m] | 1.37 | **0.80** |
-| RMS heading error [deg] | **6.3** | 10.2 |
-| RMS thrust [N] | **35.6** | 36.9 |
-| Max yaw moment [N m] | 3.6 | 6.0 |
-| Mean / p95 solve time [ms] | — | **129 / 166** |
+| RMS cross-track error [m] | 0.68 | 0.44 |
+| P95 cross-track error [m] | 0.97 | 0.69 |
+| Max cross-track error [m] | 1.37 | 0.80 |
+| RMS wrapped heading error [deg] | 6.3 | 10.2 |
+| Max wrapped heading error [deg] | 17.7 | 27.2 |
+| RMS applied thrust [N] | 31.8 | 32.6 |
+| Max applied thrust [N] | 38.0 | 58.9 |
+| RMS applied yaw moment [N m] | 1.3 | 2.1 |
+| Max applied yaw moment [N m] | 3.3 | 6.0 |
+| Thrust saturation duration [s] | 0.0 | 0.0 |
+| Yaw-moment saturation duration [s] | 0.0 | 1.9 |
+| Either channel saturated [s] | 0.0 | 1.9 |
+
+Deterministic flagship metrics formatted from `results/reference/metrics.json` (scenario `scenario_v1_mismatch_disturbance`, revision 1, seed 42, 120.0 s at 0.01 s integration). Saturation counts left-closed intervals whose applied value lies within 1% of a `ModelParams` bound span (docs/validation.md). No wall-clock timing appears here: NMPC solve times are machine-dependent and reported separately in the benchmark table.
+
+<!-- generated:reference-controller-comparison-v1:end -->
 
 NMPC tracks the path tighter at the price of more actuator activity; the LOS
-baseline is simpler and cheaper. No cherry-picked numbers: regenerate with
-`python examples/05_nmpc_demo.py` (writes `results/comparison_metrics.json`).
+baseline is simpler and cheaper. Every number above is formatted from the
+committed reference artifacts — no cherry-picked values.
 
 ![Controller comparison](assets/controller_comparison.png)
 
@@ -70,38 +90,78 @@ against the C++ kernel in the tests (max diff < 1e-8).
 
 ## Uncertainty-aware control
 
-The current demo already runs the full chain — physical model, simulation,
-estimation, optimal control — under disturbances that the controllers do not
-see. The next milestones make the uncertainty story explicit:
+The reference scenario already runs the full chain — physical model,
+simulation, estimation, optimal control — under disturbances that the
+controllers do not see:
 
 - actuator dynamics with saturation and rate limits;
 - separate nominal (controller) and truth (plant) models with parameter
   mismatch;
-- time-varying current and gust disturbances, estimated online by an
-  augmented EKF;
+- a time-varying rotating current with wind gusts, estimated online by an
+  augmented EKF (with the documented limitation that the current estimate
+  can absorb wind/model mismatch, docs/estimation.md §5);
 - scenario-based robust NMPC propagating several model variants under one
-  common control sequence;
-- Monte-Carlo evaluation of LOS vs nominal NMPC vs robust NMPC.
+  common control sequence (future work);
+- Monte-Carlo evaluation of LOS vs nominal NMPC vs robust NMPC (future
+  work).
 
 No RL, PINNs or neural networks: the differentiator is quantitative
 robustness analysis of physics-based control.
 
-## Results
+## Reference results
 
-All figures are regenerated by the examples (see below) into `results/`:
+Committed, versioned artifacts — the sole numerical source of truth:
 
-- `trajectory_open_loop.png`, `open_loop.gif` — open-loop run;
-- `heading_control.png` — heading step response;
-- `path_following.png` + `path_following_metrics.json` — LOS baseline;
-- `estimator.png` — true vs GNSS vs EKF;
-- `current_estimation.png` — true vs estimated ambient current;
-- `nmpc_trajectory.png`, `controller_comparison.png`, `comparison_metrics.json`
-  — NMPC vs LOS;
-- `assets/hero.gif` — flagship animation (committed for the README).
+- `results/reference/config.json` — the full scenario configuration
+  (parameter values, not digests, including nominal and truth plant sets);
+- `results/reference/metrics.json` — deterministic tracking and estimator
+  metrics, no timing;
+- `results/reference/benchmark.json` — machine-dependent benchmark timing;
+- `results/reference/metadata.json` — software/platform versions, source
+  fingerprint and artifact hashes;
+- `assets/hero.gif`, `assets/controller_comparison.png`,
+  `assets/current_estimation.png` — flagship assets, regenerated from the
+  same reference run.
+
+The example scripts additionally write their own figures into `results/`
+(open-loop animation, heading step, LOS path following, EKF estimation,
+NMPC trajectories).
+
+`results/reference/config.json` and `results/reference/benchmark.json`
+record the `git_commit`, and `results/reference/metadata.json` records the
+`dirty` flag, of the repository **at generation time** — honest provenance,
+not a claim about the current checkout. The authoritative consistency check
+is the content-based source fingerprint (source file list + combined
+SHA-256): it changes if and only if a source input changes. Commit source
+changes first, then regenerate the artifacts
+(`python tools/generate_reference_results.py`), or keep the source contents
+unchanged; `--check` then passes in any clean checkout whose source tree
+matches the fingerprint and fails whenever a scenario/parameter/source
+change is not reflected in the committed artifacts.
+
+<!-- generated:reference-provenance-v1:start -->
+| Item | Value |
+|---|---|
+| Scenario | `scenario_v1_mismatch_disturbance` (revision 1) |
+| Seed | 42 |
+| Duration / integration step | 120.0 s / 0.01 s |
+| Controllers | `los_pid_v1` · `nominal_nmpc_v1` |
+| Estimator | `augmented_current_ekf_v1` |
+| Schema | `results/reference/reference.schema.json` (version 1) |
+| Deterministic metrics | `results/reference/metrics.json` |
+| Machine-dependent benchmark | `results/reference/benchmark.json` |
+| Generated at (UTC) | 2026-08-14T01:01:57+00:00 |
+| Source commit | `0f44547ad79aee773ed9df4ffda2994dafbfc650` |
+| Source fingerprint | dirty: true · `3d7bdddc8b4ad9acb32f95760991fadf36f1351a67a63fa16ca793a68a9e64af` |
+
+`git_commit` and the `dirty` flag record the repository state at generation time; the source fingerprint is content-based and authoritative. After committing source changes, either regenerate the artifacts (`python tools/generate_reference_results.py`) or keep the source contents unchanged: `--check` compares only the content fingerprint, so a clean checkout at a new commit passes when the source contents are unchanged and fails when they changed. `--check` validates schema, scenario, source fingerprint, artifact hashes and marker bodies without any simulation; `--verify-determinism` runs one fresh 120 s reference and compares it with `results/reference/metrics.json`: the LOS baseline metrics exactly, and the NMPC/estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its full-precision iterates may differ in the last ulps), reporting the worst offending key and deviation on failure. Reproducibility is guaranteed within the software environment recorded in `metadata.json` (`software` block): regenerating in another environment requires a fresh `--verify-determinism` in that environment before the committed metrics can be trusted.
+
+<!-- generated:reference-provenance-v1:end -->
 
 ## Model
 
-3-DOF horizontal-plane vessel (Fossen formulation, docs/model.md):
+3-DOF horizontal-plane manoeuvring model — a Fossen-inspired formulation,
+docs/model.md:
 
 ```text
 eta = [x, y, psi]^T          nu = [u, v, r]^T
@@ -112,14 +172,17 @@ M nu_dot + C(nu_rel) nu_rel + D(nu_rel) nu_rel = tau + tau_env
 With diagonal mass + added mass, Coriolis/Munk coupling, linear + quadratic
 damping, relative-velocity current and inertial wind force. SI units,
 radians internally. Parameters are order-of-magnitude for a small USV —
-explicitly **illustrative**, not identified from a specific hull.
+explicitly **illustrative**, not identified from a specific hull. A detailed
+mathematical audit of the combined relative-velocity formulation is left to
+future work.
 
 ## Software
 
 | Path | Responsibility |
 |---|---|
 | `include/vessel_gnc/`, `src/` | C++20 core: state, dynamics, integrator, controllers, pybind11 binding |
-| `python/vessel_gnc/` | Simulation, guidance, metrics, sensors, EKF, NMPC, visualization |
+| `python/vessel_gnc/` | Simulation, guidance, metrics, sensors, EKF, NMPC, visualization, reference runner |
+| `tools/` | Reference artifact generation/check tooling |
 | `examples/` | Five runnable scenario scripts |
 | `tests/` | C++ (GoogleTest) and Python (pytest) tests |
 | `benchmarks/` | Reproducible performance benchmarks |
@@ -132,6 +195,13 @@ Requirements: CMake ≥ 3.20, a C++20 compiler, Python ≥ 3.12.
 ```bash
 pip install -e .        # builds the C++ core via CMake (scikit-build-core)
 python examples/05_nmpc_demo.py    # flagship: NMPC vs LOS + hero animation
+```
+
+Reference artifacts:
+
+```bash
+python tools/generate_reference_results.py            # full generation (120 s flagship + benchmark)
+python tools/generate_reference_results.py --check    # cheap consistency validation (no simulation)
 ```
 
 Other examples:
@@ -160,12 +230,14 @@ cmake -B build -DVESSEL_GNC_BUILD_BENCHMARKS=ON && cmake --build build
 
 ## Validation
 
-- 28 C++ tests + 30 Python tests (see `docs/validation.md` for the full
-  record, case by case);
+- the full per-case record lives in `docs/validation.md`; the C++
+  (GoogleTest) and Python (pytest) suites run in CI;
 - analytical and convergence validation (RK4 order, surge equilibrium, yaw
   balance, current equilibrium, EKF no-noise consistency);
 - cross-validation of the CasADi NMPC model against the C++ kernel;
-- deterministic simulations: seeded randomness everywhere.
+- deterministic simulations: seeded randomness everywhere, with an explicit
+  one-run determinism check (`python tools/generate_reference_results.py
+  --verify-determinism`).
 
 ## Documentation
 

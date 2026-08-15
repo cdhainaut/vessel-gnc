@@ -5,7 +5,8 @@ Run from the repository root:
     python examples/01_open_loop.py
 
 Propagates the vessel for 30 s under constant actuation, a cross-current and a
-beam wind, then writes ``results/trajectory_open_loop.png``.
+beam wind, then writes ``results/trajectory_open_loop.png`` and
+``results/open_loop.gif``.
 """
 
 from pathlib import Path
@@ -26,7 +27,7 @@ WIND_NORTH = 0.0  # [N]
 WIND_EAST = 5.0  # [N] beam wind
 OUTPUT = Path("results/trajectory_open_loop.png")
 WRITE_GIF = True  # also render the animated scene (plan's first visual milestone)
-GIF_OUTPUT = Path("assets/open_loop.gif")
+GIF_OUTPUT = Path("results/open_loop.gif")  # non-public: under ignored results/
 
 
 def main() -> None:
