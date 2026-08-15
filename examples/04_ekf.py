@@ -6,11 +6,11 @@ Run from the repository root:
 
 The vessel follows the S-curve path with LOS guidance, but the controller
 sees only noisy, low-rate sensor measurements filtered by the augmented EKF
-(GNSS, compass, speed log and gyro). The environment is time-varying: a
-slowly rotating current and wind gusts (portfolio plan Phases D-E), all
-unknown to the filter, which estimates the current alongside the vessel
-state. Writes ``results/estimator.png`` and
-``results/current_estimation.png``.
+(GNSS, compass, speed log and gyro). This isolated validation case uses the
+same nominal vessel model in the plant and filter, with a slowly rotating
+current but no wind. The augmented state can therefore be interpreted as
+physical current rather than a generic disturbance proxy. Writes
+``results/estimator.png`` and ``results/current_estimation.png``.
 """
 
 from pathlib import Path
@@ -35,14 +35,19 @@ OUTPUT = Path("results/estimator.png")
 CURRENT_OUTPUT = Path("results/current_estimation.png")
 
 SENSORS = SensorConfig()  # default rates: GNSS 5 Hz, compass/speed/gyro 10 Hz
-SCENARIO = EnvironmentScenario()  # deterministic time-varying disturbances
+SCENARIO = EnvironmentScenario(
+    wind_mean_east=0.0,
+    gust_times=(),
+    gust_peak=0.0,
+)  # deterministic current-only validation
 
 
 def main() -> None:
     path = make_s_curve_path()
-    # Model mismatch: truth plant, nominal filter (portfolio plan Phase C).
-    plant_params = _core.truth_params()
+    # Current-identification case: plant and filter share the nominal model,
+    # so the augmented state is not asked to absorb parameter mismatch.
     params = _core.default_params()
+    plant_params = params
     rng = np.random.default_rng(SEED)
     sensors = SensorSuite(SENSORS, rng)
     r_cov = {

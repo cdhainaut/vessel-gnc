@@ -20,24 +20,24 @@
       "any_saturation_duration_s": 1.79,
       "cross_track_max_m": 0.8000651623615792,
       "cross_track_p95_m": 0.6899626037711439,
-      "cross_track_rms_m": 0.4416749593106987,
-      "heading_error_max_rad": 0.4745239134939745,
-      "heading_error_rms_rad": 0.17743831449449263,
-      "moment_max_Nm": 5.977772384641959,
-      "moment_rms_Nm": 2.131237100958346,
+      "cross_track_rms_m": 0.44167499721940434,
+      "heading_error_max_rad": 0.47452391358341617,
+      "heading_error_rms_rad": 0.1774382862767531,
+      "moment_max_Nm": 5.977772385094032,
+      "moment_rms_Nm": 2.13123707961642,
       "moment_saturation_duration_s": 1.79,
       "thrust_max_N": 58.86815729815171,
-      "thrust_rms_N": 32.71357785747629,
+      "thrust_rms_N": 32.71357755402973,
       "thrust_saturation_duration_s": 0.0
     }
   },
   "estimator": {
     "current_error_max_m_s": 0.17508181151367816,
-    "current_error_rms_m_s": 0.0903471636720064,
+    "current_error_rms_m_s": 0.09034716408098636,
     "current_error_transient_s": 20.0,
     "position_error_max_m": 0.4344708180624575,
-    "position_error_rms_m": 0.16474496291104596,
-    "yaw_rate_error_rms_rad_s": 0.008430148455358392
+    "position_error_rms_m": 0.16474496499445873,
+    "yaw_rate_error_rms_rad_s": 0.008430148826917108
   },
   "scenario_id": "scenario_v1_mismatch_disturbance",
   "schema_version": 1

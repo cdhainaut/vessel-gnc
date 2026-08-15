@@ -2,12 +2,12 @@
   "$schema": "results/reference/reference.schema.json",
   "artifact_type": "benchmark",
   "benchmark_id": "benchmark_v1",
-  "git_commit": "3add1f1086df420bc0e384dea9c9aba5b115a236",
+  "git_commit": "aca57d8391217ff7628a5203d220a39344dfc48d",
   "schema_version": 1,
   "workloads": {
     "kernel": {
       "name": "cpp_rk4_propagation",
-      "ns_per_step": 472.14024999902904,
+      "ns_per_step": 632.4759599988283,
       "steps": 200000
     },
     "nmpc": {
@@ -17,17 +17,17 @@
       "final_status_histogram": {
         "Solve_Succeeded": 300
       },
-      "max_ms": 208.6967220002407,
-      "mean_ms": 91.04544064999875,
-      "median_ms": 85.86099299986927,
+      "max_ms": 268.33067300003677,
+      "mean_ms": 142.6740327466526,
+      "median_ms": 135.956884000052,
       "name": "nominal_s_curve_nmpc_60s",
-      "p95_ms": 117.96898970033,
+      "p95_ms": 196.04650670007695,
       "samples": 300
     },
     "simulation": {
       "duration_s": 1000.0,
       "name": "python_orchestration_1000s",
-      "wall_time_ms": 342.46651000012207
+      "wall_time_ms": 475.2890300001127
     }
   }
 }

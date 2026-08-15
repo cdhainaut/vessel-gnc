@@ -94,8 +94,9 @@ def _environment_arrows(
     either as legend handles (``annotate=False``) or as text next to each
     arrow (``annotate=True``). The wind arrow is anchored 1.5 m north of the
     current arrow so the two never overlap when they point in the same
-    direction. With ``estimated=True`` the arrows are dashed and labelled
-    "(estimated)". Zero components are skipped.
+    direction. With ``estimated=True`` the arrow is dashed and labelled as
+    the EKF equivalent-current state used in the combined-uncertainty
+    flagship. Zero components are skipped.
     """
     linestyle = "--" if estimated else "-"
     handles: list[tuple] = []
@@ -115,8 +116,8 @@ def _environment_arrows(
             ),
             zorder=5,
         )
-        suffix = " (est.)" if estimated else ""
-        label = f"current ({np.hypot(vn, ve):.2f} m/s){suffix}"
+        quantity = "equiv. current (EKF)" if estimated else "physical current"
+        label = f"{quantity} ({np.hypot(vn, ve):.2f} m/s)"
         handles.append(
             (plt.Line2D([], [], color="tab:blue", lw=2, ls=linestyle), label)
         )
@@ -598,12 +599,13 @@ def plot_current_estimation(
     run: ReferenceRun,
     output_path: str | os.PathLike[str],
 ) -> plt.Figure:
-    """Ambient-current estimation figure from the NMPC run's EKF history.
+    """Equivalent-current figure from the combined-uncertainty flagship.
 
-    True (solid) and estimated (dashed) current components over time plus
-    the current-vector error norm, with the discarded estimator transient
-    shaded. Rendered from ``run.nmpc.estimator`` so it shares the exact
-    reference scenario and seed of the other flagship assets.
+    Physical current (solid) and the EKF equivalent-current state (dashed)
+    are shown with their difference after the discarded estimator transient.
+    The difference includes wind/model-mismatch confounders; it is not a
+    standalone current-sensor error. Rendered from ``run.nmpc.estimator`` so
+    it shares the exact reference scenario and seed of the other assets.
 
     Args:
         run: the in-memory reference run.
@@ -631,31 +633,43 @@ def plot_current_estimation(
     )
 
     ax = axes[0]
-    ax.plot(t, true[:, 0], color="tab:orange", lw=1.4, label="true (north)")
+    ax.plot(
+        t,
+        true[:, 0],
+        color="tab:orange",
+        lw=1.4,
+        label="physical current (north)",
+    )
     ax.plot(
         t,
         estimate[:, 0],
         color="tab:orange",
         lw=1.2,
         ls="--",
-        label="estimated (north)",
+        label="EKF equivalent current (north)",
     )
-    ax.set_ylabel("current [m/s]")
-    ax.set_title("Ambient current estimated by the augmented EKF")
+    ax.set_ylabel("current-equivalent velocity [m/s]")
+    ax.set_title("Equivalent-current state under combined uncertainty")
     ax.legend(loc="best", framealpha=0.9)
     ax.grid(alpha=0.3)
 
     ax = axes[1]
-    ax.plot(t, true[:, 1], color="tab:blue", lw=1.4, label="true (east)")
+    ax.plot(
+        t,
+        true[:, 1],
+        color="tab:blue",
+        lw=1.4,
+        label="physical current (east)",
+    )
     ax.plot(
         t,
         estimate[:, 1],
         color="tab:blue",
         lw=1.2,
         ls="--",
-        label="estimated (east)",
+        label="EKF equivalent current (east)",
     )
-    ax.set_ylabel("current [m/s]")
+    ax.set_ylabel("current-equivalent velocity [m/s]")
     ax.legend(loc="best", framealpha=0.9)
     ax.grid(alpha=0.3)
 
@@ -670,8 +684,8 @@ def plot_current_estimation(
         label=f"transient {transient:.0f} s (excluded)",
     )
     ax.set_xlabel("t [s]")
-    ax.set_ylabel("current error [m/s]")
-    ax.set_title("Current-vector estimation error")
+    ax.set_ylabel("vector difference [m/s]")
+    ax.set_title("Difference from physical current (includes confounders)")
     ax.legend(loc="best", framealpha=0.9)
     ax.grid(alpha=0.3)
 

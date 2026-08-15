@@ -51,7 +51,7 @@
   <!-- EKF (nominal params) -->
   <rect x="300" y="420" width="170" height="64" rx="8" fill="#eaf3ff" stroke="#2b6cb0" stroke-width="1.5"/>
   <text x="385" y="444" text-anchor="middle" font-size="15" font-weight="bold" fill="#1a202c">EKF</text>
-  <text x="385" y="464" text-anchor="middle" font-size="12" fill="#2b6cb0">augmented current</text>
+  <text x="385" y="464" text-anchor="middle" font-size="12" fill="#2b6cb0">state + equiv. current</text>
   <text x="385" y="480" text-anchor="middle" font-size="10" fill="#2b6cb0">nominal params</text>
 
   <!-- Environment: enters the truth plant only -->

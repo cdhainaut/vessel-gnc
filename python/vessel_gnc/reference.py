@@ -113,7 +113,7 @@ class EstimatorHistory:
     state_true: np.ndarray  # (N, 6) true vessel state [x, y, psi, u, v, r]
     state_estimate: np.ndarray  # (N, 6) EKF vessel-state estimate
     current_true: np.ndarray  # (N, 2) true ambient current [V_cx, V_cy]
-    current_estimate: np.ndarray  # (N, 2) EKF current estimate
+    current_estimate: np.ndarray  # (N, 2) EKF equivalent-current estimate
 
 
 @dataclass(frozen=True)
@@ -312,7 +312,10 @@ def _run_closed_loop(
         state_true.append([state.x, state.y, state.psi, state.u, state.v, state.r])
         state_estimate.append([xhat.x, xhat.y, xhat.psi, xhat.u, xhat.v, xhat.r])
         current_true.append([env.current_north, env.current_east])
-        current_estimate.append([ekf.x[6], ekf.x[7]])
+        equivalent_current = ekf.equivalent_current_estimate
+        current_estimate.append(
+            [equivalent_current.current_north, equivalent_current.current_east]
+        )
         command.append([prev.thrust, prev.yaw_moment])
         if nmpc is not None:
             solve_times.append(nmpc.last_solve_time)

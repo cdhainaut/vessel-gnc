@@ -11,10 +11,9 @@ surface vessels.
 ![Hero: NMPC path following with predicted horizon](assets/hero.gif)
 
 *An autonomous surface vessel follows an S-curve reference path under a
-rotating current and wind gusts — disturbances that are unknown to the
-controllers and to the filter. The vessel is controlled from EKF estimates
-of noisy sensors; the cyan lines are the NMPC's 10 s predicted horizons,
-re-solved at 5 Hz.*
+rotating current and wind gusts that are not supplied directly to the
+controller. The vessel is controlled from EKF estimates of noisy sensors;
+the cyan lines are the NMPC's 10 s predicted horizons, re-solved at 5 Hz.*
 
 **3-DOF dynamics · EKF · LOS/PID · NMPC · C++20 · CasADi**
 
@@ -23,9 +22,9 @@ re-solved at 5 Hz.*
 <!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **472.1 ns/step** |
-| 1000 s simulation (Python loop) | **342 ms** |
-| NMPC mean / p95 / max solve time [ms] | **91.0 / 118.0 / 208.7** |
+| C++ RK4 propagation (vessel + actuator) | **632.5 ns/step** |
+| 1000 s simulation (Python loop) | **475 ms** |
+| NMPC mean / p95 / max solve time [ms] | **142.7 / 196.0 / 268.3** |
 
 Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v1`, 300 samples, 0 failed solves). The 5 Hz NMPC control period corresponds to a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
 
@@ -38,19 +37,13 @@ are reproduced in the [Demo](#demo) table and in `docs/control.md`,
 
 ## Demo
 
-The flagship scenario: an S-curve reference path under a slowly rotating
-current and wind gusts — all unknown to the controllers and to the filter.
-The vessel is controlled from EKF estimates only (GNSS at 5 Hz,
-compass/speed/gyro at 10 Hz, all noisy), its true dynamics differ from the
-controller model, and the commands reach the hull through a rate-limited
-actuator with response lag (docs/model.md §5). The augmented EKF estimates
-the ambient current online (example 04).
-
-The plant runs the perturbed **truth parameters** (model mismatch) behind a
-rate-limited actuator; the environment is time-varying (rotating current,
-wind gusts) and the controllers and the filter use the nominal model — they
-never see the true state or the true disturbance. The augmented EKF
-estimates the ambient current online.
+The flagship scenario uses noisy asynchronous sensors, perturbed **truth
+parameters**, a rate-limited actuator, rotating current and wind gusts. The
+controller and EKF use the nominal model and never receive the true state or
+environment. The EKF estimates vessel state plus a current-equivalent velocity;
+in this combined-uncertainty run that augmented state can absorb wind and model
+mismatch. `examples/04_ekf.py` isolates physical-current estimation by removing
+those confounders (docs/estimation.md).
 
 <!-- generated:reference-controller-comparison-v1:start -->
 | Metric | LOS (PID/PI) | NMPC |
@@ -97,9 +90,9 @@ controllers do not see:
 - actuator dynamics with saturation and rate limits;
 - separate nominal (controller) and truth (plant) models with parameter
   mismatch;
-- a time-varying rotating current with wind gusts, estimated online by an
-  augmented EKF (with the documented limitation that the current estimate
-  can absorb wind/model mismatch, docs/estimation.md §5);
+- a time-varying rotating current with wind gusts; the augmented EKF state is
+  validated as physical current in an isolated case and reported as an
+  equivalent-current proxy under combined uncertainty (docs/estimation.md);
 - scenario-based robust NMPC propagating several model variants under one
   common control sequence (future work);
 - Monte-Carlo evaluation of LOS vs nominal NMPC vs robust NMPC (future
@@ -150,9 +143,9 @@ change is not reflected in the committed artifacts.
 | Schema | `results/reference/reference.schema.json` (version 1) |
 | Deterministic metrics | `results/reference/metrics.json` |
 | Machine-dependent benchmark | `results/reference/benchmark.json` |
-| Generated at (UTC) | 2026-08-15T08:44:43+00:00 |
-| Source commit | `3add1f1086df420bc0e384dea9c9aba5b115a236` |
-| Source fingerprint | dirty: true · `825516e58f37aab9840817b692bf2ecc7bd409d4a47ae17e27e6b75678041275` |
+| Generated at (UTC) | 2026-08-15T09:00:29+00:00 |
+| Source commit | `aca57d8391217ff7628a5203d220a39344dfc48d` |
+| Source fingerprint | dirty: true · `32c6370aaabcb17f0de1f6ea2bbe9cb50721a74da59b79139a34e549ab063cb2` |
 
 `git_commit` and the `dirty` flag record the repository state at generation time; the source fingerprint is content-based and authoritative. After committing source changes, either regenerate the artifacts (`python tools/generate_reference_results.py`) or keep the source contents unchanged: `--check` compares only the content fingerprint, so a clean checkout at a new commit passes when the source contents are unchanged and fails when they changed. `--check` validates schema, scenario, source fingerprint, artifact hashes and marker bodies without any simulation; `--verify-determinism` runs one fresh 120 s reference and compares it with `results/reference/metrics.json`: the LOS baseline metrics exactly, and the NMPC/estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its full-precision iterates may differ in the last ulps), reporting the worst offending key and deviation on failure. Reproducibility is guaranteed within the software environment recorded in `metadata.json` (`software` block): regenerating in another environment requires a fresh `--verify-determinism` in that environment before the committed metrics can be trusted.
 

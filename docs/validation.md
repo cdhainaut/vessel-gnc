@@ -44,7 +44,8 @@ Status legend:
 | Sensor schedules, noise statistics, compass wrapping | verified | `tests/test_ekf.py` |
 | Covariance symmetry, positive definiteness, finiteness | verified | `tests/test_ekf.py` |
 | No-noise consistency, 8 states (exact model → estimate converges) | verified | `tests/test_ekf.py` |
-| Time-varying current estimation (rotating current + gusts) | validated | `tests/test_ekf.py` |
+| Physical-current estimation (rotating current, exact model, no wind) | validated | `tests/test_ekf.py`, `examples/04_ekf.py` |
+| Equivalent-current state under mismatch + unknown current/wind | demonstrated | `results/reference/metrics.json`, `assets/current_estimation.png` |
 | Closed-loop tracking on estimates with unknown current/wind | validated | `tests/test_ekf.py` |
 
 ## Optimal control (NMPC)
@@ -68,9 +69,9 @@ metrics.
 <!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **472.1 ns/step** |
-| 1000 s simulation (Python loop) | **342 ms** |
-| NMPC mean / p95 / max solve time [ms] | **91.0 / 118.0 / 208.7** |
+| C++ RK4 propagation (vessel + actuator) | **632.5 ns/step** |
+| 1000 s simulation (Python loop) | **475 ms** |
+| NMPC mean / p95 / max solve time [ms] | **142.7 / 196.0 / 268.3** |
 
 Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v1`, 300 samples, 0 failed solves). The 5 Hz NMPC control period corresponds to a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
 
@@ -93,9 +94,9 @@ Scenario, seed, configuration, source revision and fingerprint:
 | Schema | `results/reference/reference.schema.json` (version 1) |
 | Deterministic metrics | `results/reference/metrics.json` |
 | Machine-dependent benchmark | `results/reference/benchmark.json` |
-| Generated at (UTC) | 2026-08-15T08:44:43+00:00 |
-| Source commit | `3add1f1086df420bc0e384dea9c9aba5b115a236` |
-| Source fingerprint | dirty: true · `825516e58f37aab9840817b692bf2ecc7bd409d4a47ae17e27e6b75678041275` |
+| Generated at (UTC) | 2026-08-15T09:00:29+00:00 |
+| Source commit | `aca57d8391217ff7628a5203d220a39344dfc48d` |
+| Source fingerprint | dirty: true · `32c6370aaabcb17f0de1f6ea2bbe9cb50721a74da59b79139a34e549ab063cb2` |
 
 `git_commit` and the `dirty` flag record the repository state at generation time; the source fingerprint is content-based and authoritative. After committing source changes, either regenerate the artifacts (`python tools/generate_reference_results.py`) or keep the source contents unchanged: `--check` compares only the content fingerprint, so a clean checkout at a new commit passes when the source contents are unchanged and fails when they changed. `--check` validates schema, scenario, source fingerprint, artifact hashes and marker bodies without any simulation; `--verify-determinism` runs one fresh 120 s reference and compares it with `results/reference/metrics.json`: the LOS baseline metrics exactly, and the NMPC/estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its full-precision iterates may differ in the last ulps), reporting the worst offending key and deviation on failure. Reproducibility is guaranteed within the software environment recorded in `metadata.json` (`software` block): regenerating in another environment requires a fresh `--verify-determinism` in that environment before the committed metrics can be trusted.
 

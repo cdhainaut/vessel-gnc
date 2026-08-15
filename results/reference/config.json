@@ -1,7 +1,7 @@
 {
   "$schema": "results/reference/reference.schema.json",
   "artifact_type": "config",
-  "git_commit": "3add1f1086df420bc0e384dea9c9aba5b115a236",
+  "git_commit": "aca57d8391217ff7628a5203d220a39344dfc48d",
   "scenario": {
     "components": {
       "controller_los": "los_pid_v1",

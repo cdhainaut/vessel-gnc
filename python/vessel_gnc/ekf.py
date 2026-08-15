@@ -14,7 +14,16 @@ from vessel_gnc import _core
 
 __all__ = ["VesselEKF", "STATE_NAMES", "SENSOR_INDICES"]
 
-STATE_NAMES = ["x", "y", "psi", "u", "v", "r"]
+STATE_NAMES = [
+    "x",
+    "y",
+    "psi",
+    "u",
+    "v",
+    "r",
+    "current_north",
+    "current_east",
+]
 
 # State components observed by each sensor.
 SENSOR_INDICES = {"gnss": [0, 1], "compass": [2], "speed": [3], "gyro": [5]}
@@ -100,8 +109,18 @@ class VesselEKF:
 
     @property
     def current_estimate(self) -> _core.Environment:
-        """The estimated ambient current as an Environment (zero wind)."""
+        """The estimated current-state components as an Environment.
+
+        They represent physical current in a current-only validation case.
+        With unmodelled wind or parameter mismatch, interpret them as an
+        equivalent-current proxy rather than a standalone current measurement.
+        """
         return _core.Environment(current_north=self.x[6], current_east=self.x[7])
+
+    @property
+    def equivalent_current_estimate(self) -> _core.Environment:
+        """The current-state estimate under combined unmodelled disturbances."""
+        return self.current_estimate
 
     def predict(self, control: _core.Control) -> None:
         """Propagate the estimate by one step (RK4 kernel + linearized covariance).

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 from vessel_gnc import _core
-from vessel_gnc.ekf import VesselEKF
+from vessel_gnc.ekf import STATE_NAMES, VesselEKF
 from vessel_gnc.guidance import los_heading, make_s_curve_path
 from vessel_gnc.sensors import SensorConfig, SensorSuite
 from vessel_gnc.simulation import simulate
@@ -85,6 +85,27 @@ def _run_ekf_scenario(env, sensors, seed, duration=60.0, use_estimate=False):
     return result, ekf, np.array(est)
 
 
+def test_augmented_state_names_and_equivalent_current_alias():
+    assert STATE_NAMES == [
+        "x",
+        "y",
+        "psi",
+        "u",
+        "v",
+        "r",
+        "current_north",
+        "current_east",
+    ]
+    ekf = VesselEKF(
+        _core.default_params(),
+        state0=np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.12, -0.04]),
+    )
+    current = ekf.current_estimate
+    equivalent = ekf.equivalent_current_estimate
+    assert current.current_north == equivalent.current_north == pytest.approx(0.12)
+    assert current.current_east == equivalent.current_east == pytest.approx(-0.04)
+
+
 def test_ekf_covariance_symmetric():
     params = _core.default_params()
     rng = np.random.default_rng(3)
@@ -141,13 +162,18 @@ def test_ekf_no_noise_consistent():
     assert np.max(err) < 1e-3
 
 
-def test_ekf_estimates_time_varying_current():
-    # Phase E: the augmented filter tracks the slowly varying current from
-    # noisy sensors and vessel motion alone (docs/estimation.md §4).
+def test_ekf_estimates_time_varying_current_without_confounders():
+    # Current-only validation: truth and filter use the same vessel model,
+    # wind is disabled, and the augmented state therefore has a physical
+    # current interpretation (docs/estimation.md §4).
     from vessel_gnc.environment import EnvironmentScenario
     from vessel_gnc.guidance import los_heading, make_s_curve_path
 
-    scenario = EnvironmentScenario()
+    scenario = EnvironmentScenario(
+        wind_mean_east=0.0,
+        gust_times=(),
+        gust_peak=0.0,
+    )
     path = make_s_curve_path()
     params = _core.default_params()
     sensors = SensorSuite(SensorConfig(), np.random.default_rng(7))
@@ -186,7 +212,7 @@ def test_ekf_estimates_time_varying_current():
     truth = np.array(current_true)
     assert np.all(np.isfinite(est))
     # After the initial transient (20 s), the estimate tracks the rotating
-    # current: the gust events perturb it, so the bound is generous.
+    # physical current without wind or parameter-mismatch confounders.
     err = np.hypot(est[:, 0] - truth[:, 0], est[:, 1] - truth[:, 1])
     assert np.sqrt(np.mean(err[100:] ** 2)) < 0.06
     assert np.max(err[100:]) < 0.15
