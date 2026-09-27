@@ -21,12 +21,15 @@ import numpy as np
 
 from vessel_gnc import _core
 from vessel_gnc.path import PathGeometry
-from vessel_gnc.prediction import build_prediction_step, environment_vector
+from vessel_gnc.prediction import (
+    ACCEPTED_IPOPT_STATUSES,
+    build_prediction_step,
+    environment_vector,
+)
 
 __all__ = ["MPCC_COMPONENT_ID", "MpccConfig", "VesselMpcc"]
 
 MPCC_COMPONENT_ID = "disturbance_aware_mpcc_v1"
-_ACCEPTED_STATUSES = ("Solve_Succeeded", "Solved_To_Acceptable_Level")
 
 
 @dataclass(frozen=True)
@@ -72,9 +75,7 @@ class MpccConfig:
         for name in ("horizon", "substeps"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
-                raise ValueError(
-                    f"{name} must be an integer greater than or equal to one"
-                )
+                raise ValueError(f"{name} must be an integer greater than or equal to one")
         scalar_fields = (
             field.name
             for field in fields(self)
@@ -206,9 +207,7 @@ class VesselMpcc:
         solve_ubw[self._x_slice.start : self._x_slice.start + 8] = x0
         solve_lbw[self._s_slice.start] = candidate_progress
         solve_ubw[self._s_slice.start] = candidate_progress
-        parameters = np.concatenate(
-            [previous_control, [progress_speed_anchor], disturbance]
-        )
+        parameters = np.concatenate([previous_control, [progress_speed_anchor], disturbance])
 
         self._clear_attempt_diagnostics()
         start = time.perf_counter()
@@ -242,9 +241,7 @@ class VesselMpcc:
 
         self.last_solve_time = time.perf_counter() - start
         self.last_attempt_statuses = tuple(attempt_statuses)
-        self.last_status = (
-            attempt_statuses[-1] if attempt_statuses else "No_Solver_Attempt"
-        )
+        self.last_status = attempt_statuses[-1] if attempt_statuses else "No_Solver_Attempt"
         if accepted_decision is None:
             return self._bounded_fallback(previous_control)
 
@@ -294,9 +291,7 @@ class VesselMpcc:
         if not np.all(np.isfinite(state)) or not np.all(np.isfinite(command)):
             raise ValueError("x and u must contain finite values")
         disturbance = environment_vector(disturbance_estimate)
-        return np.array(
-            self.F(ca.DM(state), ca.DM(command), ca.DM(disturbance))
-        ).ravel()
+        return np.array(self.F(ca.DM(state), ca.DM(command), ca.DM(disturbance))).ravel()
 
     def _build(self) -> None:
         cfg = self.config
@@ -331,12 +326,8 @@ class VesselMpcc:
         physical_constraints = []
         progress_constraints = []
         for k in range(n_steps):
-            physical_constraints.append(
-                X[:, k + 1] - self.F(X[:, k], U[:, k], disturbance)
-            )
-            progress_constraints.append(
-                S[0, k + 1] - S[0, k] - cfg.dt * progress_speed[0, k]
-            )
+            physical_constraints.append(X[:, k + 1] - self.F(X[:, k], U[:, k], disturbance))
+            progress_constraints.append(S[0, k + 1] - S[0, k] - cfg.dt * progress_speed[0, k])
 
             path_position = self.path.casadi_position(S[0, k + 1])
             tangent = self.path.casadi_unit_tangent(S[0, k + 1])
@@ -398,9 +389,7 @@ class VesselMpcc:
         self._x_slice = slice(0, x_size)
         self._s_slice = slice(x_size, x_size + s_size)
         self._u_slice = slice(x_size + s_size, x_size + s_size + u_size)
-        self._vs_slice = slice(
-            x_size + s_size + u_size, x_size + s_size + u_size + vs_size
-        )
+        self._vs_slice = slice(x_size + s_size + u_size, x_size + s_size + u_size + vs_size)
 
         self.lbw = np.full(self._vs_slice.stop, -np.inf)
         self.ubw = np.full(self._vs_slice.stop, np.inf)
@@ -434,12 +423,8 @@ class VesselMpcc:
         self.ubw[self._s_slice] = self.path.length
         self.lbw[self._u_slice.start : self._u_slice.stop : 2] = self.params.thrust_min
         self.ubw[self._u_slice.start : self._u_slice.stop : 2] = self.params.thrust_max
-        self.lbw[self._u_slice.start + 1 : self._u_slice.stop : 2] = (
-            self.params.moment_min
-        )
-        self.ubw[self._u_slice.start + 1 : self._u_slice.stop : 2] = (
-            self.params.moment_max
-        )
+        self.lbw[self._u_slice.start + 1 : self._u_slice.stop : 2] = self.params.moment_min
+        self.ubw[self._u_slice.start + 1 : self._u_slice.stop : 2] = self.params.moment_max
         self.lbw[self._vs_slice] = 0.0
         self.ubw[self._vs_slice] = cfg.progress_speed_max
         self.lbg = np.zeros(9 * n_steps)
@@ -554,16 +539,12 @@ class VesselMpcc:
     def _bounded_fallback(self, control: np.ndarray) -> _core.Control:
         """Return a deterministic componentwise bounded command."""
         return _core.Control(
-            thrust=float(
-                np.clip(control[0], self.params.thrust_min, self.params.thrust_max)
-            ),
-            yaw_moment=float(
-                np.clip(control[1], self.params.moment_min, self.params.moment_max)
-            ),
+            thrust=float(np.clip(control[0], self.params.thrust_min, self.params.thrust_max)),
+            yaw_moment=float(np.clip(control[1], self.params.moment_min, self.params.moment_max)),
         )
 
     def _ok(self, status: str) -> bool:
-        return status in _ACCEPTED_STATUSES
+        return status in ACCEPTED_IPOPT_STATUSES
 
     def _guesses(
         self,
@@ -580,9 +561,7 @@ class VesselMpcc:
             primary_control = np.array([self.params.thrust_max, 0.0])
         else:
             primary_control = self.last_controls[:, 0]
-        relative_surge = x0[3] - (
-            np.cos(x0[2]) * disturbance[0] + np.sin(x0[2]) * disturbance[1]
-        )
+        relative_surge = x0[3] - (np.cos(x0[2]) * disturbance[0] + np.sin(x0[2]) * disturbance[1])
         equilibrium_thrust = (
             self.params.lin_damping_u * relative_surge
             + self.params.quad_damping_u * abs(relative_surge) * relative_surge

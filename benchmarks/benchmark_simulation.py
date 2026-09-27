@@ -22,13 +22,13 @@ from vessel_gnc import _core
 from vessel_gnc.mpcc import VesselMpcc
 from vessel_gnc.nmpc import VesselNmpc
 from vessel_gnc.path import make_s_curve_geometry
+from vessel_gnc.prediction import ACCEPTED_IPOPT_STATUSES
 from vessel_gnc.simulation import simulate
 
 DT = 0.01  # [s]
 CONTROL_PERIOD = 0.2  # [s] 5 Hz predictive-controller cadence
 CONTROL_BUDGET_MS = 200.0  # [ms] wall-clock budget at 5 Hz
 BENCHMARK_DURATION_S = 60.0  # [s]
-_ACCEPTED_STATUSES = ("Solve_Succeeded", "Solved_To_Acceptable_Level")
 
 
 def bench_kernel() -> dict[str, object]:
@@ -86,7 +86,7 @@ def _timing_record(
         "median_ms": float(np.median(times_ms)),
         "p95_ms": float(np.percentile(times_ms, 95)),
         "max_ms": float(np.max(times_ms)),
-        "failed_solves": sum(status not in _ACCEPTED_STATUSES for status in statuses),
+        "failed_solves": sum(status not in ACCEPTED_IPOPT_STATUSES for status in statuses),
         "final_status_histogram": histogram,
     }
 
@@ -116,9 +116,7 @@ def bench_nmpc(*, disturbance_aware: bool = False) -> dict[str, object]:
             params,
             CONTROL_PERIOD,
         )
-        reference_progress = 1.3 * (
-            t + nmpc.config.dt * np.arange(1, nmpc.config.horizon + 1)
-        )
+        reference_progress = 1.3 * (t + nmpc.config.dt * np.arange(1, nmpc.config.horizon + 1))
         command = nmpc.solve(
             state=state,
             actuator=actuator,
@@ -139,11 +137,7 @@ def bench_nmpc(*, disturbance_aware: bool = False) -> dict[str, object]:
         environment=environment,
         control_period=CONTROL_PERIOD,
     )
-    name = (
-        "disturbance_aware_s_curve_nmpc_60s"
-        if disturbance_aware
-        else "nominal_s_curve_nmpc_60s"
-    )
+    name = "disturbance_aware_s_curve_nmpc_60s" if disturbance_aware else "nominal_s_curve_nmpc_60s"
     return _timing_record(name, solve_times_s, statuses)
 
 
@@ -240,12 +234,8 @@ def main() -> None:
     }
 
     print("vessel-gnc performance report (machine-dependent, plan §19)")
-    print(
-        f"3-DOF RK4 propagation (C++ via binding): {kernel['ns_per_step']:8.0f} ns/step"
-    )
-    print(
-        f"1,000 s simulation (Python loop):        {simulation['wall_time_ms']:8.0f} ms"
-    )
+    print(f"3-DOF RK4 propagation (C++ via binding): {kernel['ns_per_step']:8.0f} ns/step")
+    print(f"1,000 s simulation (Python loop):        {simulation['wall_time_ms']:8.0f} ms")
     for label, controller in controllers.items():
         print(
             f"{label:17s} [ms]: mean {controller['mean_ms']:6.0f}, "
@@ -253,8 +243,7 @@ def main() -> None:
             f"p95 {controller['p95_ms']:6.0f}, max {controller['max_ms']:6.0f}"
         )
         statuses = ", ".join(
-            f"{status}: {count}"
-            for status, count in controller["final_status_histogram"].items()
+            f"{status}: {count}" for status, count in controller["final_status_histogram"].items()
         )
         print(
             f"  {controller['samples']} samples, "

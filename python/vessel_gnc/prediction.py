@@ -15,6 +15,10 @@ import numpy as np
 
 from vessel_gnc import _core
 
+# IPOPT final statuses treated as accepted solves by every predictive
+# controller, benchmark workload and artifact check.
+ACCEPTED_IPOPT_STATUSES = ("Solve_Succeeded", "Solved_To_Acceptable_Level")
+
 
 def environment_vector(environment: _core.Environment | None) -> np.ndarray:
     """Return ``[current_N, current_E, wind_N, wind_E]`` or exact zeros.

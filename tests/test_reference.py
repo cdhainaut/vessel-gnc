@@ -11,7 +11,9 @@ seed 42 scenario. No 120 s flagship run is executed here.
 import numpy as np
 import pytest
 import vessel_gnc.reference as reference_module
+from vessel_gnc.metrics import CONTROLLER_METRIC_KEYS
 from vessel_gnc.reference import (
+    ESTIMATOR_METRIC_KEYS,
     ReferenceScenarioConfig,
     default_reference_config,
     reference_metrics,
@@ -21,33 +23,6 @@ from vessel_gnc.reference import (
 # Short deterministic scenario: 2 s at 0.01 s, LOS 0.1 s, NMPC 0.2 s, with a
 # reduced estimator transient so reference_metrics() has post-transient data.
 SHORT = ReferenceScenarioConfig(duration_s=2.0, estimator_transient_s=0.5)
-
-CONTROLLER_METRIC_KEYS = (
-    "cross_track_rms_m",
-    "cross_track_p95_m",
-    "cross_track_max_m",
-    "heading_error_rms_rad",
-    "heading_error_max_rad",
-    "path_progress_final_m",
-    "path_progress_fraction",
-    "mean_progress_rate_m_s",
-    "route_completion_s",
-    "thrust_rms_N",
-    "thrust_max_N",
-    "moment_rms_Nm",
-    "moment_max_Nm",
-    "thrust_saturation_duration_s",
-    "moment_saturation_duration_s",
-    "any_saturation_duration_s",
-)
-ESTIMATOR_METRIC_KEYS = (
-    "position_error_rms_m",
-    "position_error_max_m",
-    "yaw_rate_error_rms_rad_s",
-    "current_error_rms_m_s",
-    "current_error_max_m_s",
-    "current_error_transient_s",
-)
 
 
 def test_default_configuration_is_canonical():
@@ -105,9 +80,7 @@ def test_short_run_records_callback_aligned_histories_and_fair_mpcc_inputs(
                 residuals[name] = measurement - [state.x, state.y]
             elif name == "compass":
                 difference = measurement[0] - state.psi
-                residuals[name] = np.array(
-                    [np.arctan2(np.sin(difference), np.cos(difference))]
-                )
+                residuals[name] = np.array([np.arctan2(np.sin(difference), np.cos(difference))])
             elif name == "speed":
                 residuals[name] = measurement - state.u
             elif name == "gyro":
@@ -318,15 +291,11 @@ def test_short_run_records_callback_aligned_histories_and_fair_mpcc_inputs(
     }
     for controller_metrics in metrics["controllers"].values():
         assert set(controller_metrics) == set(CONTROLLER_METRIC_KEYS)
-        finite_values = [
-            value for value in controller_metrics.values() if value is not None
-        ]
+        finite_values = [value for value in controller_metrics.values() if value is not None]
         assert all(np.isfinite(value) for value in finite_values)
         assert controller_metrics["route_completion_s"] is None
     assert set(metrics["estimator"]) == set(ESTIMATOR_METRIC_KEYS)
-    assert (
-        metrics["estimator"]["current_error_transient_s"] == SHORT.estimator_transient_s
-    )
+    assert metrics["estimator"]["current_error_transient_s"] == SHORT.estimator_transient_s
     assert all(np.isfinite(value) for value in metrics["estimator"].values())
 
 

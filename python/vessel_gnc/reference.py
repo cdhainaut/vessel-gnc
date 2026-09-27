@@ -51,7 +51,19 @@ __all__ = [
     "default_reference_config",
     "run_reference_scenario",
     "reference_metrics",
+    "ESTIMATOR_METRIC_KEYS",
 ]
+
+# Metric-key contract of ``reference_metrics()["estimator"]`` (mirrors
+# reference.schema.json #/$defs/estimatorMetrics).
+ESTIMATOR_METRIC_KEYS = (
+    "position_error_rms_m",
+    "position_error_max_m",
+    "yaw_rate_error_rms_rad_s",
+    "current_error_rms_m_s",
+    "current_error_max_m_s",
+    "current_error_transient_s",
+)
 
 # Stable component IDs of the reference scenario (results/reference schema).
 LOS_COMPONENT_ID = "los_pid_v1"
@@ -61,9 +73,7 @@ DISTURBANCE_AWARE_NMPC_COMPONENT_ID = "disturbance_aware_nmpc_v1"
 _SENSOR_NAMES = ("gnss", "compass", "speed", "gyro")
 
 # Policy signature: (t, estimate, previously applied command, filter).
-ControllerPolicy = Callable[
-    [float, _core.State, _core.Control, VesselEKF], _core.Control
-]
+ControllerPolicy = Callable[[float, _core.State, _core.Control, VesselEKF], _core.Control]
 
 
 @dataclass(frozen=True)
@@ -90,9 +100,7 @@ class ReferenceScenarioConfig:
     environment: EnvironmentScenario = field(default_factory=EnvironmentScenario)
     sensors: SensorConfig = field(default_factory=SensorConfig)
     nmpc: NmpcConfig = field(default_factory=NmpcConfig)
-    los_heading_gains: _core.PidGains = field(
-        default_factory=_core.default_heading_gains
-    )
+    los_heading_gains: _core.PidGains = field(default_factory=_core.default_heading_gains)
     los_speed_gains: _core.PidGains = field(default_factory=_core.default_speed_gains)
     los_heading_moment_limit_Nm: float = 6.0  # [N m] heading-controller output limit
     los_speed_thrust_limit_N: float = 40.0  # [N] speed-controller output limit
@@ -273,12 +281,8 @@ def _run_los(
     path: PathGeometry,
 ) -> ControllerReferenceRun:
     """LOS baseline: PID heading + PI surge speed on EKF estimates."""
-    heading = _core.HeadingController(
-        config.los_heading_gains, config.los_heading_moment_limit_Nm
-    )
-    speed = _core.SpeedController(
-        config.los_speed_gains, config.los_speed_thrust_limit_N
-    )
+    heading = _core.HeadingController(config.los_heading_gains, config.los_heading_moment_limit_Nm)
+    speed = _core.SpeedController(config.los_speed_gains, config.los_speed_thrust_limit_N)
 
     def policy(
         _t: float, xhat: _core.State, _prev: _core.Control, _ekf: VesselEKF
@@ -303,9 +307,7 @@ def _run_nmpc(
     """Mission-clock NMPC, with optional equivalent-current prediction."""
     nmpc = VesselNmpc(config.nominal_params, config.nmpc)
 
-    def policy(
-        t: float, xhat: _core.State, prev: _core.Control, ekf: VesselEKF
-    ) -> _core.Control:
+    def policy(t: float, xhat: _core.State, prev: _core.Control, ekf: VesselEKF) -> _core.Control:
         # Legacy time-NMPC retains mission-clock progress, but both position
         # and heading references are evaluated on the exact same stored smooth
         # geometry as LOS and MPCC (never on a separate polyline).
@@ -317,9 +319,7 @@ def _run_nmpc(
         # The model includes actuator states. The disturbance-aware variant
         # treats the EKF equivalent-current estimate as constant over the
         # finite horizon; nominal NMPC uses the exact zero-disturbance case.
-        disturbance_estimate = (
-            ekf.equivalent_current_estimate if disturbance_aware else None
-        )
+        disturbance_estimate = ekf.equivalent_current_estimate if disturbance_aware else None
         return nmpc.solve(
             xhat,
             ekf.actuator,
@@ -417,9 +417,7 @@ def _run_closed_loop(
         state_estimate.append([xhat.x, xhat.y, xhat.psi, xhat.u, xhat.v, xhat.r])
         current_true.append([env.current_north, env.current_east])
         equivalent_current = ekf.equivalent_current_estimate
-        current_estimate.append(
-            [equivalent_current.current_north, equivalent_current.current_east]
-        )
+        current_estimate.append([equivalent_current.current_north, equivalent_current.current_east])
         command.append([prev.thrust, prev.yaw_moment])
         predictive_controller = nmpc if nmpc is not None else mpcc
         if predictive_controller is not None and policy_updated:
@@ -501,9 +499,7 @@ def _estimator_metrics(
         "position_error_rms_m": float(np.sqrt(np.mean(pos_error**2))),
         "position_error_max_m": float(np.max(pos_error)),
         "yaw_rate_error_rms_rad_s": float(np.sqrt(np.mean(yaw_rate_error**2))),
-        "current_error_rms_m_s": float(
-            np.sqrt(np.mean(current_error[after_transient] ** 2))
-        ),
+        "current_error_rms_m_s": float(np.sqrt(np.mean(current_error[after_transient] ** 2))),
         "current_error_max_m_s": float(np.max(current_error[after_transient])),
         "current_error_transient_s": float(config.estimator_transient_s),
     }
@@ -520,8 +516,7 @@ def _validate_config(config: ReferenceScenarioConfig) -> None:
         or config.mpcc_period_s <= 0.0
     ):
         raise ValueError(
-            "estimator_period_s, los_period_s, nmpc_period_s and "
-            "mpcc_period_s must be positive"
+            "estimator_period_s, los_period_s, nmpc_period_s and mpcc_period_s must be positive"
         )
     estimator_step_ratio = config.estimator_period_s / config.integration_dt_s
     if not np.isclose(
@@ -530,9 +525,7 @@ def _validate_config(config: ReferenceScenarioConfig) -> None:
         rtol=0.0,
         atol=1e-12,
     ):
-        raise ValueError(
-            "estimator_period_s must be an integer multiple of integration_dt_s"
-        )
+        raise ValueError("estimator_period_s must be an integer multiple of integration_dt_s")
     for name, period in (
         ("los_period_s", config.los_period_s),
         ("nmpc_period_s", config.nmpc_period_s),
@@ -540,9 +533,7 @@ def _validate_config(config: ReferenceScenarioConfig) -> None:
     ):
         ratio = period / config.estimator_period_s
         if not np.isclose(ratio, round(ratio), rtol=0.0, atol=1e-12):
-            raise ValueError(
-                f"{name} must be an integer multiple of estimator_period_s"
-            )
+            raise ValueError(f"{name} must be an integer multiple of estimator_period_s")
     if not np.isclose(
         config.mpcc_period_s,
         config.nmpc_period_s,
@@ -568,9 +559,7 @@ def _validate_config(config: ReferenceScenarioConfig) -> None:
             rtol=0.0,
             atol=1e-12,
         ):
-            raise ValueError(
-                "sensor periods must be integer multiples of estimator_period_s"
-            )
+            raise ValueError("sensor periods must be integer multiples of estimator_period_s")
     if config.speed_ref_m_s <= 0.0 or config.lookahead_m <= 0.0:
         raise ValueError("speed_ref_m_s and lookahead_m must be positive")
     if config.seed < 0:

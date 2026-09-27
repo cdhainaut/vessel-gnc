@@ -16,7 +16,28 @@ from vessel_gnc.guidance import (
 from vessel_gnc.path import PathGeometry
 from vessel_gnc.simulation import SimulationResult
 
-__all__ = ["path_following_metrics"]
+__all__ = ["path_following_metrics", "CONTROLLER_METRIC_KEYS"]
+
+# Metric-key contract of ``path_following_metrics`` (mirrors
+# reference.schema.json #/$defs/controllerMetrics).
+CONTROLLER_METRIC_KEYS = (
+    "cross_track_rms_m",
+    "cross_track_p95_m",
+    "cross_track_max_m",
+    "heading_error_rms_rad",
+    "heading_error_max_rad",
+    "path_progress_final_m",
+    "path_progress_fraction",
+    "mean_progress_rate_m_s",
+    "route_completion_s",
+    "thrust_rms_N",
+    "thrust_max_N",
+    "moment_rms_Nm",
+    "moment_max_Nm",
+    "thrust_saturation_duration_s",
+    "moment_saturation_duration_s",
+    "any_saturation_duration_s",
+)
 
 
 def path_following_metrics(
@@ -31,26 +52,15 @@ def path_following_metrics(
     """Path-following metrics over the whole run (SI units, angles in rad).
 
     Cross-track statistics use the absolute signed cross-track error
-    (positive = left of the path direction, see guidance.project_onto_path).
-    Heading errors are wrapped to (-pi, pi]. Actuator effort uses the applied
-    (post-actuator) histories, not the raw commands. Progress is the geometric
-    projection coordinate [m]. ``path_progress_final_m`` is the final sample's
-    projected progress, ``path_progress_fraction`` divides it by the complete
-    path length, and ``mean_progress_rate_m_s`` is the final-minus-initial
-    progress divided by elapsed simulation time. Route completion is the first
-    sample whose projection reaches ``route_completion_fraction`` (default
-    99 %) of the path length; ``route_completion_s`` is ``None`` if no sample
-    reaches it.
-
-    Saturation duration: for each left-closed simulation interval
-    ``[t_k, t_{k+1})`` a channel is saturated when its applied actuator value
-    is within ``1 - saturation_threshold`` of that channel's full physical
-    bound span from either ``ModelParams`` bound, i.e. it reaches at least
-    ``saturation_threshold`` (default 99 %) of the span from the nearer bound.
-    Duration is the number of flagged intervals multiplied by the integration
-    step ``dt``; the final sample (``t = duration``) bounds no interval and
-    contributes no duration. Thrust, yaw moment and their union (no double
-    counting) are reported separately.
+    (positive = left of the path direction, see guidance.project_onto_path);
+    heading errors are wrapped to (-pi, pi]; actuator effort uses the applied
+    (post-actuator) histories. Progress is the geometric projection coordinate
+    [m], ``path_progress_fraction`` divides the final progress by the complete
+    path length, and ``route_completion_s`` is the first sample reaching
+    ``route_completion_fraction`` (default 99 %) of the path length, or
+    ``None``. Saturation duration counts left-closed intervals whose applied
+    value reaches ``saturation_threshold`` (default 99 %) of a physical bound
+    span; the exact definition lives in ``docs/validation.md``.
 
     Args:
         result: simulation history (state and applied actuator values).
@@ -96,9 +106,7 @@ def path_following_metrics(
         psi_los = los_heading(points, path, lookahead)
         path_length = float(cumulative_length[-1])
     cross_abs = np.abs(cross)
-    heading_error = np.arctan2(
-        np.sin(psi_los - result.psi), np.cos(psi_los - result.psi)
-    )
+    heading_error = np.arctan2(np.sin(psi_los - result.psi), np.cos(psi_los - result.psi))
 
     # Saturation over the left-closed intervals [t_k, t_{k+1}): only the
     # first n_steps samples bound an interval (the final sample contributes
@@ -136,8 +144,7 @@ def path_following_metrics(
         "moment_max_Nm": float(np.max(np.abs(result.yaw_moment))),
         "thrust_saturation_duration_s": float(np.count_nonzero(thrust_sat)) * result.dt,
         "moment_saturation_duration_s": float(np.count_nonzero(moment_sat)) * result.dt,
-        "any_saturation_duration_s": float(np.count_nonzero(thrust_sat | moment_sat))
-        * result.dt,
+        "any_saturation_duration_s": float(np.count_nonzero(thrust_sat | moment_sat)) * result.dt,
     }
 
 

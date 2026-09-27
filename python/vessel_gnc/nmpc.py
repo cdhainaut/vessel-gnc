@@ -14,7 +14,11 @@ import casadi as ca
 import numpy as np
 
 from vessel_gnc import _core
-from vessel_gnc.prediction import build_prediction_step, environment_vector
+from vessel_gnc.prediction import (
+    ACCEPTED_IPOPT_STATUSES,
+    build_prediction_step,
+    environment_vector,
+)
 
 __all__ = ["NmpcConfig", "VesselNmpc"]
 
@@ -220,9 +224,7 @@ class VesselNmpc:
             cost += cfg.s_thrust * du[0] ** 2 + cfg.s_moment * du[1] ** 2
 
         # Dynamics constraints: X_{k+1} = F(X_k, U_k).
-        g = ca.vertcat(
-            *[X[:, k + 1] - F(X[:, k], U[:, k], disturbance) for k in range(n_steps)]
-        )
+        g = ca.vertcat(*[X[:, k + 1] - F(X[:, k], U[:, k], disturbance) for k in range(n_steps)])
 
         opts = {
             "expand": True,
@@ -237,9 +239,7 @@ class VesselNmpc:
             },
             "print_time": False,
         }
-        self.solver = ca.nlpsol(
-            "nmpc", "ipopt", {"x": w, "f": cost, "g": g, "p": p}, opts
-        )
+        self.solver = ca.nlpsol("nmpc", "ipopt", {"x": w, "f": cost, "g": g, "p": p}, opts)
 
         # Bounds: control saturation (static), initial state pinned per solve,
         # and generous state bounds (they never bind in practice but keep IPOPT
@@ -247,9 +247,7 @@ class VesselNmpc:
         n_x = 8 * (n_steps + 1)
         self.lbw = np.full(n_x + 2 * n_steps, -ca.inf)
         self.ubw = np.full(n_x + 2 * n_steps, ca.inf)
-        state_lo = np.array(
-            [-1e3, -1e3, -200.0, -10.0, -10.0, -5.0, cfg_min_t, cfg_min_m]
-        )
+        state_lo = np.array([-1e3, -1e3, -200.0, -10.0, -10.0, -5.0, cfg_min_t, cfg_min_m])
         state_hi = np.array([1e3, 1e3, 200.0, 10.0, 10.0, 5.0, cfg_max_t, cfg_max_m])
         self.lbw[:n_x] = np.tile(state_lo, n_steps + 1)
         self.ubw[:n_x] = np.tile(state_hi, n_steps + 1)
@@ -262,7 +260,7 @@ class VesselNmpc:
         self.w0 = None
 
     def _ok(self, status: str) -> bool:
-        return status in ("Solve_Succeeded", "Solved_To_Acceptable_Level")
+        return status in ACCEPTED_IPOPT_STATUSES
 
     def _guesses(
         self,
