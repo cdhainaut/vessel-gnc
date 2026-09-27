@@ -226,6 +226,10 @@ class VesselNmpc:
         # Dynamics constraints: X_{k+1} = F(X_k, U_k).
         g = ca.vertcat(*[X[:, k + 1] - F(X[:, k], U[:, k], disturbance) for k in range(n_steps)])
 
+        # Termination is iteration- and tolerance-based on purpose: no
+        # wall-clock cap, which would make accepted iterates depend on
+        # machine load and break the artifact reproducibility contract
+        # (docs/validation.md).
         opts = {
             "expand": True,
             "ipopt": {
@@ -235,7 +239,6 @@ class VesselNmpc:
                 "tol": 1e-4,
                 "acceptable_tol": 1e-4,
                 "acceptable_iter": 8,
-                "max_wall_time": 0.4,
             },
             "print_time": False,
         }

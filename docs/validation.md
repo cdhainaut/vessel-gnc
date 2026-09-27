@@ -106,11 +106,11 @@ metrics.
 <!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **739.9 ns/step** |
-| 1000 s simulation (Python loop) | **568 ms** |
-| Nominal NMPC mean / median / p95 / max [ms] | **32.4 / 30.3 / 45.1 / 87.2** |
-| Disturbance-aware NMPC mean / median / p95 / max [ms] | **36.3 / 35.6 / 50.1 / 71.7** |
-| Disturbance-aware MPCC mean / median / p95 / max [ms] | **73.6 / 68.8 / 107.7 / 161.3** |
+| C++ RK4 propagation (vessel + actuator) | **742.8 ns/step** |
+| 1000 s simulation (Python loop) | **657 ms** |
+| Nominal NMPC mean / median / p95 / max [ms] | **30.0 / 27.4 / 48.8 / 91.0** |
+| Disturbance-aware NMPC mean / median / p95 / max [ms] | **30.6 / 27.6 / 44.6 / 81.7** |
+| Disturbance-aware MPCC mean / median / p95 / max [ms] | **55.7 / 48.0 / 102.8 / 370.8** |
 
 Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v3`, 900 predictive solves, 0 failed). Per-workload status histograms: Nominal NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware MPCC: 300 samples, 0 failed, Solve_Succeeded=300. The 5 Hz control period defines a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
 
@@ -133,9 +133,9 @@ Scenario, seed, configuration, source revision and fingerprint:
 | Schema | `results/reference/reference.schema.json` (version 3) |
 | Deterministic metrics | `results/reference/metrics.json` |
 | Machine-dependent benchmark | `results/reference/benchmark.json` |
-| Generated at (UTC) | 2026-09-27T17:21:36+00:00 |
-| Source commit | `3ed5a9fe36fd5eff3cc824b1ff9a338a328ebf7a` |
-| Source fingerprint | dirty: true · `478ad5df66aeabd4f7ff6eacd2df46c1e1f1415daa72278887e23815e6dc2497` |
+| Generated at (UTC) | 2026-09-27T19:42:39+00:00 |
+| Source commit | `dec0802642417ed3b5f1eaf86f131926fdc591c5` |
+| Source fingerprint | dirty: true · `3e710ef8ccd36660a31b388eb7f68ea2bc329af5e463893e1b18621c7f2ac367` |
 
 Provenance rows are generation-time records; the content-based source fingerprint is the authoritative consistency check. The full reproducibility contract and the metric definitions live in the validation documentation.
 
@@ -158,7 +158,14 @@ without any simulation.
 `results/reference/metrics.json`: the LOS baseline metrics exactly, and the
 NMPC, MPCC and estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves
 to `tol=1e-4`, so its full-precision iterates may differ in the last ulps),
-reporting the worst offending key and deviation on failure. Reproducibility
+reporting the worst offending key and deviation on failure.
+
+Solver termination is iteration- and tolerance-based (`max_iter`, `tol`,
+`acceptable_tol`): the controllers deliberately carry no wall-clock
+termination, which would make accepted iterates depend on machine load and
+break this contract. Wall-clock solve times are properties of the workload
+(measured in `results/reference/benchmark.json`), never of the solver's
+stopping criterion. Reproducibility
 is guaranteed within the software environment recorded in `metadata.json`
 (`software` block): regenerating in another environment requires a fresh
 `--verify-determinism` in that environment before the committed metrics can

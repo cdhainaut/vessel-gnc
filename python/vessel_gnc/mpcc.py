@@ -66,9 +66,6 @@ class MpccConfig:
     progress_speed_ref: float = 1.3  # [m/s] regularization anchor
     progress_speed_max: float = 2.0  # [m/s] hard upper bound
     warm_start: bool = True
-    # Per-attempt IPOPT wall-time cap [s], the real-time safety net. Behaviour
-    # tests lift it so accept/reject outcomes cannot depend on machine load.
-    solver_max_wall_time_s: float = 0.4
 
     def __post_init__(self) -> None:
         """Reject invalid dimensions, bounds and non-finite weights."""
@@ -103,8 +100,6 @@ class MpccConfig:
             raise ValueError("MPCC weights must be non-negative")
         if self.progress_speed_max <= 0.0:
             raise ValueError("progress_speed_max must be positive")
-        if self.solver_max_wall_time_s <= 0.0:
-            raise ValueError("solver_max_wall_time_s must be positive")
         if not 0.0 <= self.progress_speed_ref <= self.progress_speed_max:
             raise ValueError("progress_speed_ref must lie in [0, progress_speed_max]")
 
@@ -364,14 +359,16 @@ class VesselMpcc:
                 "sb": "yes",
                 "max_iter": 300,
                 # Adaptive barrier: the monotone mu path stalls on the
-                # turn-2 instances of bench_mpcc (hundreds of iterations,
-                # wall-time-capped), while the adaptive strategy converges
-                # them in ~10-25 iterations without changing the optimum.
+                # turn-2 instances of bench_mpcc (hundreds of iterations),
+                # while the adaptive strategy converges them in ~10-25
+                # iterations without changing the optimum. Termination is
+                # iteration- and tolerance-based on purpose (no wall-clock
+                # cap): accepted iterates must not depend on machine load
+                # (docs/validation.md).
                 "mu_strategy": "adaptive",
                 "tol": 1e-4,
                 "acceptable_tol": 1e-4,
                 "acceptable_iter": 8,
-                "max_wall_time": cfg.solver_max_wall_time_s,
             },
             "print_time": False,
         }

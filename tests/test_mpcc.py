@@ -15,10 +15,6 @@ PARAMS = _core.default_params()
 NORTH_PATH = np.array([[0.0, 0.0], [100.0, 0.0]])
 EAST_PATH = np.array([[0.0, 0.0], [0.0, 100.0]])
 MAX_PREDICTED_PROGRESS_LEAD_M = 2.0
-# Behaviour tests lift the per-attempt IPOPT wall-time cap: the production
-# real-time safety net would make accept/reject outcomes depend on machine
-# load, which must not decide a deterministic unit test.
-BEHAVIOUR_CONFIG = MpccConfig(solver_max_wall_time_s=5.0)
 
 
 class _RejectedSolver:
@@ -836,7 +832,7 @@ def test_stall_diagnostic_exposes_virtual_vs_achieved_progress():
     slow_actuator_params = _core.default_params()
     slow_actuator_params.thrust_rate_limit = 0.01
     slow_actuator_params.moment_rate_limit = 0.01
-    controller = _mpcc(params=slow_actuator_params, config=BEHAVIOUR_CONFIG)
+    controller = _mpcc(params=slow_actuator_params)
     controller.solve(
         _core.State(),
         _core.ActuatorState(),
@@ -871,7 +867,7 @@ def test_hard_first_turn_instance_solves_within_budget():
     captured hard state now converges on the first attempt within the
     per-attempt wall-time budget.
     """
-    controller = VesselMpcc(PARAMS, make_s_curve_geometry(), config=BEHAVIOUR_CONFIG)
+    controller = VesselMpcc(PARAMS, make_s_curve_geometry())
     state = _core.State(
         x=41.10,
         y=6.52,
