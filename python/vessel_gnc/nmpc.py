@@ -1,9 +1,8 @@
 """Nonlinear model predictive control with CasADi (docs/control.md §5).
 
-The prediction model is an independent CasADi implementation of the 3-DOF
-dynamics (docs/model.md §2-§3), discretized with RK4 — deliberately
-duplicated from the C++ kernel because CasADi needs symbolic expressions;
-the two implementations are cross-validated in tests/test_nmpc.py.
+The shared prediction model is an independent CasADi implementation of the
+3-DOF dynamics (docs/model.md §2-§3), discretized with RK4 and cross-validated
+against the C++ kernel in tests/test_nmpc.py.
 """
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ import casadi as ca
 import numpy as np
 
 from vessel_gnc import _core
+from vessel_gnc.prediction import build_prediction_step, environment_vector
 
 __all__ = ["NmpcConfig", "VesselNmpc"]
 
@@ -58,7 +58,7 @@ class VesselNmpc:
         self.config = config if config is not None else NmpcConfig()
         self.last_solve_time = 0.0  # [s]
         self.last_status = ""
-        self.last_trajectory: np.ndarray | None = None  # (6, N+1)
+        self.last_trajectory: np.ndarray | None = None  # (8, N+1)
         self.last_controls: np.ndarray | None = None  # (2, N)
         self._build()
 
@@ -101,7 +101,7 @@ class VesselNmpc:
         )
         self.lbw[:8] = x0
         self.ubw[:8] = x0
-        disturbance = self._environment_vector(disturbance_estimate)
+        disturbance = environment_vector(disturbance_estimate)
         p = np.concatenate(
             [
                 np.asarray(refs, dtype=float).ravel(),
@@ -176,7 +176,7 @@ class VesselNmpc:
         Returns:
             The propagated 8-state vector, cross-validatable against C++.
         """
-        disturbance = self._environment_vector(disturbance_estimate)
+        disturbance = environment_vector(disturbance_estimate)
         return np.array(self.F(ca.DM(x), ca.DM(u), ca.DM(disturbance))).ravel()
 
     # --- internals ----------------------------------------------------------
@@ -189,13 +189,11 @@ class VesselNmpc:
 
         # Decision variables: X (8, N+1), U (2, N); the initial state X_0 is
         # pinned by equal bounds in solve().
-        x = ca.MX.sym("x", 8)
-        u = ca.MX.sym("u", 2)
         disturbance = ca.MX.sym("disturbance", 4)
-        F = ca.Function(
-            "F",
-            [x, u, disturbance],
-            [self._discrete_step(x, u, disturbance)],
+        F = build_prediction_step(
+            params=self.params,
+            dt=cfg.dt,
+            substeps=cfg.substeps,
         )
         self.F = F
 
@@ -262,125 +260,6 @@ class VesselNmpc:
         self.lbg = np.zeros(8 * n_steps)
         self.ubg = np.zeros(8 * n_steps)
         self.w0 = None
-
-    def _discrete_step(
-        self,
-        x: ca.MX,
-        u: ca.MX,
-        disturbance: ca.MX,
-    ) -> ca.MX:
-        """RK4 discretization of the continuous 8-state model.
-
-        States: vessel (x, y, psi, u, v, r) plus actuator (thrust,
-        yaw_moment); controls: commanded (thrust_cmd, moment_cmd). The
-        actuator block is stepped first, then the vessel block with the
-        applied forces held at their end-of-step values — the exact same
-        composition as the C++ reference (actuator_step + rk4_step), which
-        keeps the cross-validation test bit-tight. Each block integrates
-        ``substeps`` internal RK4 steps of ``dt / substeps``: the yaw
-        dynamics are fast (time constant m33/N_r ~ 0.2 s) and a single step
-        of 0.4 s is outside RK4's stability margin once the Munk coupling is
-        active.
-        """
-        p = self.params
-        substep_dt = self.config.dt / self.config.substeps
-
-        def rk4(ode: ca.Function, state: ca.MX, argument: ca.MX) -> ca.MX:
-            """One internal RK4 step of ``state_dot = ode(state, argument)``."""
-            k1 = ode(state, argument)
-            k2 = ode(state + substep_dt / 2 * k1, argument)
-            k3 = ode(state + substep_dt / 2 * k2, argument)
-            k4 = ode(state + substep_dt * k3, argument)
-            return state + substep_dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-
-        # --- Actuator block (docs/model.md §5): rate-limited first-order
-        # response, smooth tanh approximation of the rate limit (C1, keeps
-        # IPOPT fast). The command is clamped to the actuator bounds.
-        actuator_state = ca.MX.sym("actuator_state", 2)
-        thrust_cmd = ca.fmin(ca.fmax(u[0], p.thrust_min), p.thrust_max)
-        moment_cmd = ca.fmin(ca.fmax(u[1], p.moment_min), p.moment_max)
-        thrust_dot = p.thrust_rate_limit * ca.tanh(
-            (thrust_cmd - actuator_state[0])
-            / (p.thrust_time_constant * p.thrust_rate_limit)
-        )
-        moment_dot = p.moment_rate_limit * ca.tanh(
-            (moment_cmd - actuator_state[1])
-            / (p.moment_time_constant * p.moment_rate_limit)
-        )
-        actuator_dot = ca.Function(
-            "actuator_dot", [actuator_state, u], [ca.vertcat(thrust_dot, moment_dot)]
-        )
-
-        # --- Vessel block: the applied forces are the actuator states.
-        vessel_state_sym = ca.MX.sym("vessel_state", 6)
-        vessel_input_sym = ca.MX.sym("vessel_input", 6)
-
-        def vessel_dot(state: ca.MX, vessel_input: ca.MX) -> ca.MX:
-            applied = vessel_input[:2]
-            environment = vessel_input[2:]
-            cos_psi = ca.cos(state[2])
-            sin_psi = ca.sin(state[2])
-            current_u = cos_psi * environment[0] + sin_psi * environment[1]
-            current_v = -sin_psi * environment[0] + cos_psi * environment[1]
-            wind_u = cos_psi * environment[2] + sin_psi * environment[3]
-            wind_v = -sin_psi * environment[2] + cos_psi * environment[3]
-            u_rel = state[3] - current_u
-            v_rel = state[4] - current_v
-            r_rel = state[5]
-            m11 = p.mass + p.added_mass_x
-            m22 = p.mass + p.added_mass_y
-            m33 = p.inertia_z + p.added_inertia_z
-            cx = -m22 * v_rel * r_rel
-            cy = m11 * u_rel * r_rel
-            cr = (m22 - m11) * u_rel * v_rel
-            du = p.lin_damping_u * u_rel + p.quad_damping_u * ca.fabs(u_rel) * u_rel
-            dv = p.lin_damping_v * v_rel + p.quad_damping_v * ca.fabs(v_rel) * v_rel
-            dr = p.lin_damping_r * r_rel + p.quad_damping_r * ca.fabs(r_rel) * r_rel
-            current_transport_u = r_rel * current_v
-            current_transport_v = -r_rel * current_u
-            return ca.vertcat(
-                state[3] * cos_psi - state[4] * sin_psi,
-                state[3] * sin_psi + state[4] * cos_psi,
-                r_rel,
-                current_transport_u + (applied[0] + wind_u - cx - du) / m11,
-                current_transport_v + (wind_v - cy - dv) / m22,
-                (applied[1] - cr - dr) / m33,
-            )
-
-        vessel_ode = ca.Function(
-            "vessel_ode",
-            [vessel_state_sym, vessel_input_sym],
-            [vessel_dot(vessel_state_sym, vessel_input_sym)],
-        )
-
-        # --- Compose: actuator first (end-of-step forces), then the vessel.
-        vessel_state = x[:6]
-        actuator = x[6:]
-        for _ in range(self.config.substeps):
-            actuator = rk4(actuator_dot, actuator, u)
-            vessel_input = ca.vertcat(actuator[0], actuator[1], disturbance)
-            vessel_state = rk4(vessel_ode, vessel_state, vessel_input)
-        return ca.vertcat(vessel_state, actuator)
-
-    @staticmethod
-    def _environment_vector(
-        environment: _core.Environment | None,
-    ) -> np.ndarray:
-        """Convert an optional environment estimate to the NLP parameter vector."""
-        if environment is None:
-            return np.zeros(4)
-        values = np.array(
-            [
-                environment.current_north,
-                environment.current_east,
-                environment.wind_north,
-                environment.wind_east,
-            ],
-            dtype=float,
-        )
-        if not np.all(np.isfinite(values)):
-            raise ValueError("disturbance_estimate must contain finite values")
-        return values
 
     def _ok(self, status: str) -> bool:
         return status in ("Solve_Succeeded", "Solved_To_Acceptable_Level")
