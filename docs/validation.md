@@ -58,6 +58,43 @@ Status legend:
 | Solve-time budget, determinism, warm-start shift | verified | `tests/test_nmpc.py` |
 | Flagship LOS vs nominal/aware NMPC, EKF in the loop | validated | `results/reference/metrics.json` (scenario `scenario_v2_disturbance_aware`) |
 
+## Smooth path geometry and geometric MPCC (Milestone 5)
+
+| Case | Status | Location |
+|---|---|---|
+| PCHIP monotone cubic Hermite on cumulative chord length: knot/interior interpolation, C1 tangent continuity at interior knots | verified | `tests/test_path.py` |
+| Unit tangent norm, finite clock-from-North heading, port-positive contour sign | verified | `tests/test_path.py` |
+| Deterministic projection, endpoint clamping, progress-hint validation | verified | `tests/test_path.py` |
+| Duplicate/non-finite waypoint rejection, degenerate-tangent rejection | verified | `tests/test_path.py` |
+| S-curve sampled geometry: no self-intersection, bounded deviation from the waypoint polyline | verified | `tests/test_path.py` |
+| NumPy/CasADi path evaluators agree at knots and interior points (same stored coefficients) | verified | `tests/test_path.py` |
+| Shared CasADi prediction step vs C++ kernel with non-zero current/wind | verified | `tests/test_prediction.py`, `tests/test_nmpc.py` (max diff < 1e-8) |
+| `None` disturbance is exactly the zero-disturbance case | verified | `tests/test_prediction.py`, `tests/test_mpcc.py` |
+| MPCC decision-vector layout/dims, bound consistency, no mission-time/reference argument | verified | `tests/test_mpcc.py` |
+| Analytical contour/lag signs on straight North/East paths | verified | `tests/test_mpcc.py` |
+| Disturbance sensitivity without truth leakage (explicit held estimate) | verified | `tests/test_mpcc.py`, `tests/test_reference.py` |
+| Deterministic repeated solve, `reset()` clears warm start and progress | verified | `tests/test_mpcc.py` |
+| Transactional failure handling: rejected/excepted solves keep accepted horizons at the original time, bounded `u_prev` fallback is applied | verified | `tests/test_mpcc.py`, `tests/test_reference.py` |
+| Short calm straight progression, monotone bounded progress | validated | `tests/test_mpcc.py` |
+| Short lateral-offset convergence, short non-zero-current case finite and accepted | validated | `tests/test_mpcc.py` |
+| Tuned curved-path relative progress (≥ 98 % of aware-NMPC) without racing | validated | `tests/test_mpcc.py` |
+| Stall diagnostic: virtual speed > achieved speed, terminal virtual-physical lead < 2 m | verified | `tests/test_mpcc.py` |
+| Fairness/cadence: identical 10 Hz sensor sampling + EKF updates for every controller, predictive solves at 5 Hz, MPCC receives only EKF state + equivalent-current estimate | verified | `tests/test_reference.py` |
+| Progress/completion metrics: final progress, 99 % completion rule, `null` completion time | verified | `tests/test_metrics.py` |
+
+**Verified implementation versus physical-model validation.** The path,
+projection, prediction-step, failure-handling and fairness rows are
+*verified implementation*: they confirm the code reproduces its documented
+equations, invariants and input/output contracts (analytical, cross-checked
+or deterministic-contract tests). The short closed-loop rows are *validated*
+on the illustrative vessel model: they confirm stable, physically
+reasonable behaviour under the model's stated approximations, not fidelity
+of the parameter set to a real hull (docs/model.md §6–§7). The tuned
+`q_progress = 8.25` rationale and its two-seed short-case sweep are recorded
+in `docs/control.md §5` (no truth/sensor/EKF change was involved); those
+short cases are regression/tuning evidence and are not a substitute for the
+deferred 120 s promotion run (plan §6.2).
+
 ## Performance
 
 Wall-clock measurements are machine-dependent by construction and are
@@ -69,12 +106,13 @@ metrics.
 <!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **578.2 ns/step** |
-| 1000 s simulation (Python loop) | **453 ms** |
-| Nominal NMPC mean / p95 / max [ms] | **23.9 / 33.9 / 77.0** |
-| Disturbance-aware NMPC mean / p95 / max [ms] | **22.5 / 31.0 / 40.8** |
+| C++ RK4 propagation (vessel + actuator) | **493.7 ns/step** |
+| 1000 s simulation (Python loop) | **346 ms** |
+| Nominal NMPC mean / median / p95 / max [ms] | **20.1 / 19.3 / 26.9 / 33.8** |
+| Disturbance-aware NMPC mean / median / p95 / max [ms] | **16.7 / 15.6 / 22.0 / 27.2** |
+| Disturbance-aware MPCC mean / median / p95 / max [ms] | **27.5 / 26.2 / 33.4 / 70.4** |
 
-Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v2`, 600 samples, 0 failed solves). The 5 Hz NMPC control period corresponds to a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
+Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v3`, 900 predictive solves, 0 failed). Per-workload status histograms: Nominal NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware MPCC: 300 samples, 0 failed, Solve_Succeeded=300. The 5 Hz control period defines a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
 
 <!-- generated:reference-benchmark-v1:end -->
 
@@ -87,18 +125,18 @@ Scenario, seed, configuration, source revision and fingerprint:
 <!-- generated:reference-provenance-v1:start -->
 | Item | Value |
 |---|---|
-| Scenario | `scenario_v2_disturbance_aware` (revision 1) |
+| Scenario | `scenario_v3_mpcc` (revision 1) |
 | Seed | 42 |
 | Duration / integration step | 120.0 s / 0.01 s |
-| Controllers | `los_pid_v1` · `nominal_nmpc_v1` · `disturbance_aware_nmpc_v1` |
+| Controllers | `los_pid_v1` · `nominal_nmpc_v1` · `disturbance_aware_nmpc_v1` · `disturbance_aware_mpcc_v1` |
 | Estimator | `augmented_current_ekf_v1` |
-| Schema | `results/reference/reference.schema.json` (version 2) |
+| Schema | `results/reference/reference.schema.json` (version 3) |
 | Deterministic metrics | `results/reference/metrics.json` |
 | Machine-dependent benchmark | `results/reference/benchmark.json` |
-| Generated at (UTC) | 2026-08-15T09:44:51+00:00 |
-| Source commit | `53e0958039310f59f44ec2b7be4a840dd0e882d2` |
-| Source fingerprint | dirty: true · `4f7198bfe08cf9b7118c779a77d1fab84dd61c8cba8506322cb17b34624aa414` |
+| Generated at (UTC) | 2026-08-16T20:46:31+00:00 |
+| Source commit | `5796fdcfa726f4359d0b4e43e9d03ecfe54c3e61` |
+| Source fingerprint | dirty: true · `4988f887eef5f91ce6cfb2424bb15dc73c7d351317fb00a351f664e1e5981c5d` |
 
-`git_commit` and the `dirty` flag record the repository state at generation time; the source fingerprint is content-based and authoritative. After committing source changes, either regenerate the artifacts (`python tools/generate_reference_results.py`) or keep the source contents unchanged: `--check` compares only the content fingerprint, so a clean checkout at a new commit passes when the source contents are unchanged and fails when they changed. `--check` validates schema, scenario, source fingerprint, artifact hashes and marker bodies without any simulation; `--verify-determinism` runs one fresh 120 s reference and compares it with `results/reference/metrics.json`: the LOS baseline metrics exactly, and both NMPC variants plus estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its full-precision iterates may differ in the last ulps), reporting the worst offending key and deviation on failure. Reproducibility is guaranteed within the software environment recorded in `metadata.json` (`software` block): regenerating in another environment requires a fresh `--verify-determinism` in that environment before the committed metrics can be trusted.
+`git_commit` and the `dirty` flag record the repository state at generation time; the source fingerprint is content-based and authoritative. After committing source changes, either regenerate the artifacts (`python tools/generate_reference_results.py`) or keep the source contents unchanged: `--check` compares only the content fingerprint, so a clean checkout at a new commit passes when the source contents are unchanged and fails when they changed. `--check` validates schema, scenario, source fingerprint, artifact hashes and marker bodies without any simulation; `--verify-determinism` runs one fresh 120 s reference and compares it with `results/reference/metrics.json`: the LOS baseline metrics exactly, and both NMPC variants, MPCC plus estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its full-precision iterates may differ in the last ulps), reporting the worst offending key and deviation on failure. Reproducibility is guaranteed within the software environment recorded in `metadata.json` (`software` block): regenerating in another environment requires a fresh `--verify-determinism` in that environment before the committed metrics can be trusted.
 
 <!-- generated:reference-provenance-v1:end -->

@@ -23,12 +23,13 @@ at 5 Hz.*
 <!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **578.2 ns/step** |
-| 1000 s simulation (Python loop) | **453 ms** |
-| Nominal NMPC mean / p95 / max [ms] | **23.9 / 33.9 / 77.0** |
-| Disturbance-aware NMPC mean / p95 / max [ms] | **22.5 / 31.0 / 40.8** |
+| C++ RK4 propagation (vessel + actuator) | **493.7 ns/step** |
+| 1000 s simulation (Python loop) | **346 ms** |
+| Nominal NMPC mean / median / p95 / max [ms] | **20.1 / 19.3 / 26.9 / 33.8** |
+| Disturbance-aware NMPC mean / median / p95 / max [ms] | **16.7 / 15.6 / 22.0 / 27.2** |
+| Disturbance-aware MPCC mean / median / p95 / max [ms] | **27.5 / 26.2 / 33.4 / 70.4** |
 
-Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v2`, 600 samples, 0 failed solves). The 5 Hz NMPC control period corresponds to a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
+Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v3`, 900 predictive solves, 0 failed). Per-workload status histograms: Nominal NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware MPCC: 300 samples, 0 failed, Solve_Succeeded=300. The 5 Hz control period defines a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
 
 <!-- generated:reference-benchmark-v1:end -->
 
@@ -50,22 +51,26 @@ disturbance. `examples/04_ekf.py` isolates physical-current estimation by
 removing the confounders (docs/estimation.md).
 
 <!-- generated:reference-controller-comparison-v1:start -->
-| Metric | LOS (PID/PI) | Nominal NMPC | Aware NMPC |
-|---|---:|---:|---:|
-| RMS cross-track error [m] | 0.68 | 0.44 | 0.26 |
-| P95 cross-track error [m] | 0.98 | 0.69 | 0.58 |
-| Max cross-track error [m] | 1.37 | 0.80 | 0.76 |
-| RMS wrapped heading error [deg] | 6.3 | 10.2 | 10.4 |
-| Max wrapped heading error [deg] | 17.6 | 27.2 | 28.4 |
-| RMS applied thrust [N] | 31.8 | 32.7 | 32.4 |
-| Max applied thrust [N] | 38.1 | 58.9 | 58.8 |
-| RMS applied yaw moment [N m] | 1.3 | 2.1 | 2.2 |
-| Max applied yaw moment [N m] | 3.3 | 6.0 | 5.8 |
-| Thrust saturation duration [s] | 0.0 | 0.0 | 0.0 |
-| Yaw-moment saturation duration [s] | 0.0 | 1.8 | 0.0 |
-| Either channel saturated [s] | 0.0 | 1.8 | 0.0 |
+| Metric | LOS (PID/PI) | Nominal NMPC | Aware NMPC | Aware MPCC |
+|---|---:|---:|---:|---:|
+| RMS cross-track error [m] | 0.69 | 0.41 | 0.23 | 0.25 |
+| P95 cross-track error [m] | 0.98 | 0.65 | 0.53 | 0.61 |
+| Max cross-track error [m] | 1.07 | 0.74 | 0.63 | 0.71 |
+| RMS wrapped heading error [deg] | 7.1 | 10.5 | 11.2 | 9.8 |
+| Max wrapped heading error [deg] | 20.4 | 27.7 | 31.7 | 29.1 |
+| Final path progress [m] | 154.9 | 156.2 | 156.1 | 164.2 |
+| Final path progress fraction [-] | 0.774 | 0.781 | 0.780 | 0.821 |
+| Mean progress rate [m/s] | 1.29 | 1.30 | 1.30 | 1.37 |
+| Route completion [s] | — | — | — | — |
+| RMS applied thrust [N] | 31.8 | 33.7 | 33.5 | 36.6 |
+| Max applied thrust [N] | 38.5 | 59.2 | 59.1 | 43.1 |
+| RMS applied yaw moment [N m] | 1.5 | 2.2 | 2.5 | 2.3 |
+| Max applied yaw moment [N m] | 3.9 | 6.0 | 6.0 | 6.0 |
+| Thrust saturation duration [s] | 0.0 | 0.1 | 0.0 | 0.0 |
+| Yaw-moment saturation duration [s] | 0.0 | 2.4 | 1.7 | 2.3 |
+| Either channel saturated [s] | 0.0 | 2.5 | 1.7 | 2.3 |
 
-Deterministic flagship metrics formatted from `results/reference/metrics.json` (scenario `scenario_v2_disturbance_aware`, revision 1, seed 42, 120.0 s at 0.01 s integration). Saturation counts left-closed intervals whose applied value lies within 1% of a `ModelParams` bound span (docs/validation.md). No wall-clock timing appears here: NMPC solve times are machine-dependent and reported separately in the benchmark table.
+Deterministic flagship metrics formatted from `results/reference/metrics.json` (scenario `scenario_v3_mpcc`, revision 1, seed 42, 120.0 s at 0.01 s integration). Route completion is the first sample at 99% of total chord progress; an incomplete route is shown as —. Saturation counts left-closed intervals whose applied value lies within 1% of a `ModelParams` bound span (docs/validation.md). No wall-clock timing appears here: predictive solve times are machine-dependent and reported separately in the benchmark table.
 
 <!-- generated:reference-controller-comparison-v1:end -->
 
@@ -141,19 +146,19 @@ change is not reflected in the committed artifacts.
 <!-- generated:reference-provenance-v1:start -->
 | Item | Value |
 |---|---|
-| Scenario | `scenario_v2_disturbance_aware` (revision 1) |
+| Scenario | `scenario_v3_mpcc` (revision 1) |
 | Seed | 42 |
 | Duration / integration step | 120.0 s / 0.01 s |
-| Controllers | `los_pid_v1` · `nominal_nmpc_v1` · `disturbance_aware_nmpc_v1` |
+| Controllers | `los_pid_v1` · `nominal_nmpc_v1` · `disturbance_aware_nmpc_v1` · `disturbance_aware_mpcc_v1` |
 | Estimator | `augmented_current_ekf_v1` |
-| Schema | `results/reference/reference.schema.json` (version 2) |
+| Schema | `results/reference/reference.schema.json` (version 3) |
 | Deterministic metrics | `results/reference/metrics.json` |
 | Machine-dependent benchmark | `results/reference/benchmark.json` |
-| Generated at (UTC) | 2026-08-15T09:44:51+00:00 |
-| Source commit | `53e0958039310f59f44ec2b7be4a840dd0e882d2` |
-| Source fingerprint | dirty: true · `4f7198bfe08cf9b7118c779a77d1fab84dd61c8cba8506322cb17b34624aa414` |
+| Generated at (UTC) | 2026-08-16T20:46:31+00:00 |
+| Source commit | `5796fdcfa726f4359d0b4e43e9d03ecfe54c3e61` |
+| Source fingerprint | dirty: true · `4988f887eef5f91ce6cfb2424bb15dc73c7d351317fb00a351f664e1e5981c5d` |
 
-`git_commit` and the `dirty` flag record the repository state at generation time; the source fingerprint is content-based and authoritative. After committing source changes, either regenerate the artifacts (`python tools/generate_reference_results.py`) or keep the source contents unchanged: `--check` compares only the content fingerprint, so a clean checkout at a new commit passes when the source contents are unchanged and fails when they changed. `--check` validates schema, scenario, source fingerprint, artifact hashes and marker bodies without any simulation; `--verify-determinism` runs one fresh 120 s reference and compares it with `results/reference/metrics.json`: the LOS baseline metrics exactly, and both NMPC variants plus estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its full-precision iterates may differ in the last ulps), reporting the worst offending key and deviation on failure. Reproducibility is guaranteed within the software environment recorded in `metadata.json` (`software` block): regenerating in another environment requires a fresh `--verify-determinism` in that environment before the committed metrics can be trusted.
+`git_commit` and the `dirty` flag record the repository state at generation time; the source fingerprint is content-based and authoritative. After committing source changes, either regenerate the artifacts (`python tools/generate_reference_results.py`) or keep the source contents unchanged: `--check` compares only the content fingerprint, so a clean checkout at a new commit passes when the source contents are unchanged and fails when they changed. `--check` validates schema, scenario, source fingerprint, artifact hashes and marker bodies without any simulation; `--verify-determinism` runs one fresh 120 s reference and compares it with `results/reference/metrics.json`: the LOS baseline metrics exactly, and both NMPC variants, MPCC plus estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its full-precision iterates may differ in the last ulps), reporting the worst offending key and deviation on failure. Reproducibility is guaranteed within the software environment recorded in `metadata.json` (`software` block): regenerating in another environment requires a fresh `--verify-determinism` in that environment before the committed metrics can be trusted.
 
 <!-- generated:reference-provenance-v1:end -->
 
