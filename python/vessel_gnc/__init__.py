@@ -3,6 +3,7 @@ for autonomous surface vessels."""
 
 from vessel_gnc import _core  # noqa: F401  (compiled module, required)
 from vessel_gnc.mpcc import MPCC_COMPONENT_ID, MpccConfig, VesselMpcc
+from vessel_gnc.nmpc import NmpcConfig, VesselNmpc
 from vessel_gnc.path import PathGeometry, PathProjection, make_s_curve_geometry
 from vessel_gnc.simulation import SimulationResult, simulate
 
@@ -12,6 +13,8 @@ __all__ = [
     "PathGeometry",
     "PathProjection",
     "make_s_curve_geometry",
+    "NmpcConfig",
+    "VesselNmpc",
     "MPCC_COMPONENT_ID",
     "MpccConfig",
     "VesselMpcc",
