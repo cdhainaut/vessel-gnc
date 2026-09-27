@@ -27,17 +27,17 @@ from pathlib import Path
 import numpy as np
 from vessel_gnc import _core
 from vessel_gnc.reference import reference_metrics, run_reference_scenario
-from vessel_gnc.visualization import (
-    animate_trajectory,
+from vessel_gnc.reference_figures import (
     plot_controller_comparison,
     plot_reference_trajectories,
 )
+from vessel_gnc.visualization import animate_trajectory
 
 TRAJ_OUTPUT = Path("results/nmpc_trajectory.png")
 COMPARISON_OUTPUT = Path("results/controller_comparison.png")
 METRICS_OUTPUT = Path("results/comparison_metrics.json")
-WRITE_HERO = True  # render the README hero animation (plan §14)
-HERO_OUTPUT = Path("assets/hero.gif")
+WRITE_HERO = True  # render a demo hero animation (never the committed asset)
+HERO_OUTPUT = Path("results/hero_demo.gif")
 
 _METRIC_ROWS = (
     "cross_track_rms_m",
@@ -115,8 +115,7 @@ def main() -> None:
             reference_path=run.path,
             horizon=controller.horizon,
             horizon_label=(
-                "disturbance-aware prediction "
-                f"({cfg.nmpc.horizon * cfg.nmpc.dt:.0f} s horizon)"
+                f"disturbance-aware prediction ({cfg.nmpc.horizon * cfg.nmpc.dt:.0f} s horizon)"
             ),
         )
         print(f"wrote {HERO_OUTPUT}")
