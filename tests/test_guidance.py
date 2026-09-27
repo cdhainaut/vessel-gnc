@@ -8,6 +8,7 @@ import vessel_gnc
 from vessel_gnc import _core
 from vessel_gnc.guidance import los_heading, make_s_curve_path, project_onto_path
 from vessel_gnc.metrics import path_following_metrics
+from vessel_gnc.path import PathGeometry
 from vessel_gnc.simulation import simulate
 
 # --- Geometry -----------------------------------------------------------------
@@ -52,6 +53,22 @@ def test_los_rejects_bad_input():
     dup = np.array([[0.0, 0.0], [0.0, 0.0], [10.0, 0.0]])
     with pytest.raises(ValueError):
         project_onto_path(np.array([[1.0, 1.0]]), dup)
+
+
+def test_los_on_smooth_geometry_matches_polyline_on_straight_path():
+    # LOS can consume the same path: on straight paths the exact smooth-
+    # geometry lookahead (PathGeometry.los_heading) equals the legacy
+    # polyline LOS. Curved sections intentionally differ (exact geometry vs
+    # chord approximation) and are validated in tests/test_path.py.
+    for path in (
+        np.array([[0.0, 0.0], [100.0, 0.0]]),  # North
+        np.array([[0.0, 0.0], [0.0, 100.0]]),  # East
+    ):
+        geometry = PathGeometry(path)
+        points = np.array([[20.0, 3.0], [50.0, -4.0], [120.0, 10.0]])
+        assert np.allclose(
+            geometry.los_heading(points, 8.0), los_heading(points, path, 8.0)
+        )
 
 
 # --- Closed-loop regression ---------------------------------------------------
