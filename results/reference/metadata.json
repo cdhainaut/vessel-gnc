@@ -2,14 +2,14 @@
   "$schema": "results/reference/reference.schema.json",
   "artifact_type": "metadata",
   "artifacts": {
-    "assets/controller_comparison.png": "286fea326cbb4a0de61fb5b9cec1ab4365e9af4c712425c63e84be06aed433ed",
-    "assets/current_estimation.png": "fd548a8fecf2f8b14cc88686c5acc62bdf42a79c723009d138f4bdce258ff18b",
-    "assets/hero.gif": "925d169d068246e23bfcf5afc800b639f64c5f873b71bc31d7aaf41ab4d89f27",
-    "results/reference/benchmark.json": "b895c5e6931007e3efcb2610738ff87a2eae2e1bbe7034125d862b8b2702350b",
-    "results/reference/config.json": "0d0b94a7b13bc3dea85f5becbeb40d8e969484b30d8fecf1632c7dc28cc680b1",
-    "results/reference/metrics.json": "7e7adef598224a27c81ab1c9134a03624451fafd309528e225fc4266ec04be89"
+    "assets/controller_comparison.png": "158521076e408a06b5acd4a2f96113c17211647a5b34af1aae7c8aab9790508a",
+    "assets/current_estimation.png": "22ce432f2720f01285abfedcf159def9ec42be4113b7a00b34d9a4120d5b6a33",
+    "assets/hero.gif": "3a5c4cec43ce6f13e21632758124f0d083c84dab3219b0ba62db1cd2a0352c9d",
+    "results/reference/benchmark.json": "6c5bd6af2d722a20a9f837ef59811782096465b4e16066d5ab036440884a66ce",
+    "results/reference/config.json": "86a3438c305e647950052eb5b8b417a4b15bf7d0af0c61e4d3640403bcfce602",
+    "results/reference/metrics.json": "ee5ddf3dd20b4e83937c56f5db2f0b3cd00f3abdc7f15661d8287c49c6da7331"
   },
-  "generated_at_utc": "2026-08-16T20:46:31+00:00",
+  "generated_at_utc": "2026-09-27T17:21:36+00:00",
   "platform": {
     "machine": "x86_64",
     "os": "Linux"
@@ -41,9 +41,12 @@
       "python/vessel_gnc/mpcc.py",
       "python/vessel_gnc/nmpc.py",
       "python/vessel_gnc/path.py",
+      "python/vessel_gnc/plot_style.py",
       "python/vessel_gnc/prediction.py",
       "python/vessel_gnc/reference.py",
       "python/vessel_gnc/reference_artifacts.py",
+      "python/vessel_gnc/reference_figures.py",
+      "python/vessel_gnc/reference_markdown.py",
       "python/vessel_gnc/sensors.py",
       "python/vessel_gnc/simulation.py",
       "python/vessel_gnc/visualization.py",
@@ -55,6 +58,6 @@
       "src/integrator.cpp",
       "tools/generate_reference_results.py"
     ],
-    "sha256": "4988f887eef5f91ce6cfb2424bb15dc73c7d351317fb00a351f664e1e5981c5d"
+    "sha256": "478ad5df66aeabd4f7ff6eacd2df46c1e1f1415daa72278887e23815e6dc2497"
   }
 }
