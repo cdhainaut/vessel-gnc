@@ -53,9 +53,7 @@ def _mpcc(
 
 def _predicted_terminal_progress_lead(controller: VesselMpcc) -> float:
     """Virtual minus geometric physical progress at the horizon end [m]."""
-    physical_progress = controller.path.project(
-        controller.last_trajectory[:2, -1]
-    ).progress[0]
+    physical_progress = controller.path.project(controller.last_trajectory[:2, -1]).progress[0]
     return float(controller.last_progress_trajectory[-1] - physical_progress)
 
 
@@ -532,9 +530,7 @@ def test_rejected_status_is_transactional_and_returns_bounded_previous_command()
     rejected_decision = warm_start.copy()
     rejected_decision[controller._s_slice.start + 1] = controller.path.length + 7.0
     rejected_decision[controller._u_slice.start] = PARAMS.thrust_max + 11.0
-    rejected_decision[controller._vs_slice.start] = (
-        controller.config.progress_speed_max + 3.0
-    )
+    rejected_decision[controller._vs_slice.start] = controller.config.progress_speed_max + 3.0
     controller.solver = _RejectedSolver(
         rejected_decision,
         "Maximum_Iterations_Exceeded",
@@ -570,9 +566,7 @@ def test_rejected_status_is_transactional_and_returns_bounded_previous_command()
     assert controller.last_attempted_progress_trajectory[1] == pytest.approx(
         controller.path.length + 7.0
     )
-    assert controller.last_attempted_controls[0, 0] == pytest.approx(
-        PARAMS.thrust_max + 11.0
-    )
+    assert controller.last_attempted_controls[0, 0] == pytest.approx(PARAMS.thrust_max + 11.0)
     assert controller.last_attempted_progress_speed[0] == pytest.approx(
         controller.config.progress_speed_max + 3.0
     )
@@ -718,9 +712,7 @@ def test_tuned_mpcc_matches_curved_path_relative_progress_without_racing():
             if step % control_stride == 0:
                 if isinstance(controller, VesselNmpc):
                     reference_progress = start_progress + 1.3 * (
-                        time_s
-                        + controller.config.dt
-                        * np.arange(1, controller.config.horizon + 1)
+                        time_s + controller.config.dt * np.arange(1, controller.config.horizon + 1)
                     )
                     command = controller.solve(
                         state=state,
@@ -741,8 +733,7 @@ def test_tuned_mpcc_matches_curved_path_relative_progress_without_racing():
                         controller.last_trajectory[:2, -1]
                     ).progress[0]
                     horizon_leads.append(
-                        controller.last_progress_trajectory[-1]
-                        - physical_terminal_progress
+                        controller.last_progress_trajectory[-1] - physical_terminal_progress
                     )
                 statuses.append(controller.last_status)
                 commands.append([command.thrust, command.yaw_moment])
@@ -779,13 +770,9 @@ def test_tuned_mpcc_matches_curved_path_relative_progress_without_racing():
             np.asarray(horizon_leads),
         )
 
-    aware_tracking, aware_statuses, _aware_commands, _ = run_controller(
-        VesselNmpc(PARAMS)
-    )
+    aware_tracking, aware_statuses, _aware_commands, _ = run_controller(VesselNmpc(PARAMS))
     mpcc_controller = VesselMpcc(PARAMS, path)
-    mpcc_tracking, mpcc_statuses, mpcc_commands, horizon_leads = run_controller(
-        mpcc_controller
-    )
+    mpcc_tracking, mpcc_statuses, mpcc_commands, horizon_leads = run_controller(mpcc_controller)
 
     achieved_progress_ratio = (mpcc_tracking[0] - start_progress) / (
         aware_tracking[0] - start_progress
@@ -812,15 +799,8 @@ def test_short_calm_straight_path_makes_monotone_progress():
     assert abs(state.y) < 1e-6
     assert progress[-1] > progress[0] + 3.0
     assert np.all(np.diff(progress) >= -1e-12)
-    assert (
-        0.0
-        <= _predicted_terminal_progress_lead(controller)
-        < MAX_PREDICTED_PROGRESS_LEAD_M
-    )
-    assert all(
-        status in ("Solve_Succeeded", "Solved_To_Acceptable_Level")
-        for status in statuses
-    )
+    assert 0.0 <= _predicted_terminal_progress_lead(controller) < MAX_PREDICTED_PROGRESS_LEAD_M
+    assert all(status in ("Solve_Succeeded", "Solved_To_Acceptable_Level") for status in statuses)
     assert controller.last_solve_succeeded
 
 
@@ -831,16 +811,9 @@ def test_short_lateral_offset_converges_toward_path():
     )
     assert abs(state.y) < 0.5
     assert progress[-1] > 5.0
-    assert (
-        0.0
-        <= _predicted_terminal_progress_lead(controller)
-        < MAX_PREDICTED_PROGRESS_LEAD_M
-    )
+    assert 0.0 <= _predicted_terminal_progress_lead(controller) < MAX_PREDICTED_PROGRESS_LEAD_M
     assert np.all(np.isfinite(controller.last_trajectory))
-    assert all(
-        status in ("Solve_Succeeded", "Solved_To_Acceptable_Level")
-        for status in statuses
-    )
+    assert all(status in ("Solve_Succeeded", "Solved_To_Acceptable_Level") for status in statuses)
 
 
 def test_short_nonzero_current_case_is_finite_and_accepted():
@@ -856,10 +829,7 @@ def test_short_nonzero_current_case_is_finite_and_accepted():
     assert np.all(np.isfinite(controller.last_trajectory))
     assert np.all(np.isfinite(controller.last_progress_trajectory))
     assert progress[-1] > progress[0]
-    assert all(
-        status in ("Solve_Succeeded", "Solved_To_Acceptable_Level")
-        for status in statuses
-    )
+    assert all(status in ("Solve_Succeeded", "Solved_To_Acceptable_Level") for status in statuses)
 
 
 def test_stall_diagnostic_exposes_virtual_vs_achieved_progress():

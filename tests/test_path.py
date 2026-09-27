@@ -41,8 +41,8 @@ def _assert_matches_dense_brute_force(
     queries: np.ndarray,
 ) -> None:
     projection = geometry.project(queries)
-    reference_progress, reference_distance_squared, grid_spacing = (
-        _dense_brute_force_projection(geometry, queries)
+    reference_progress, reference_distance_squared, grid_spacing = _dense_brute_force_projection(
+        geometry, queries
     )
     projected_distance_squared = ((projection.position - queries) ** 2).sum(axis=1)
     assert np.all(projected_distance_squared <= reference_distance_squared + 1e-10)
@@ -128,9 +128,7 @@ def test_contour_sign_port_positive():
         assert proj.cross_track[1] == pytest.approx(-1.0, abs=1e-9)
     # identical to the legacy polyline sign on the straight first segment
     s_legacy = g.project(np.array([[10.0, 2.0], [10.0, -2.0]]))
-    legacy = project_onto_path(
-        np.array([[10.0, 2.0], [10.0, -2.0]]), make_s_curve_path()
-    )
+    legacy = project_onto_path(np.array([[10.0, 2.0], [10.0, -2.0]]), make_s_curve_path())
     assert s_legacy.cross_track == pytest.approx(legacy[2])
 
 
@@ -180,9 +178,7 @@ def test_projection_accuracy_against_dense_grid():
             [200.0, 50.0],
         ]
     )
-    dense_min = (
-        ((dense_pos[None, :, :] - queries[:, None, :]) ** 2).sum(axis=2).min(axis=1)
-    )
+    dense_min = ((dense_pos[None, :, :] - queries[:, None, :]) ** 2).sum(axis=2).min(axis=1)
     proj = g.project(queries)
     d_proj = ((proj.position - queries) ** 2).sum(axis=1)
     assert np.all(d_proj <= dense_min + 1e-9)
@@ -240,9 +236,7 @@ def test_projection_hint_never_worsens():
         q = rng.uniform(-30.0, 200.0, size=2)
         hint = float(rng.uniform(0.0, g.length))
         d_none = np.linalg.norm(q - g.project(np.array([q])).position[0])
-        d_hint = np.linalg.norm(
-            q - g.project(np.array([q]), progress_hint_m=hint).position[0]
-        )
+        d_hint = np.linalg.norm(q - g.project(np.array([q]), progress_hint_m=hint).position[0])
         assert d_hint <= d_none + 1e-12
     # a hint at the true projection does not move the result
     q = g.position(85.0) + np.array([2.0, -1.0])
@@ -412,13 +406,9 @@ def test_los_lookahead_exact_on_geometry():
     # on the path: desired heading = East = +90 deg
     assert g.los_heading(np.array([[0.0, 0.0]]), 10.0)[0] == pytest.approx(np.pi / 2)
     # 10 m south of the start: projection clamps to s = 0, LOS point 10 m ahead
-    assert g.los_heading(np.array([[0.0, -10.0]]), 10.0)[0] == pytest.approx(
-        np.arctan2(20.0, 0.0)
-    )
+    assert g.los_heading(np.array([[0.0, -10.0]]), 10.0)[0] == pytest.approx(np.arctan2(20.0, 0.0))
     # beyond the path end: lookahead clamps to the final point
-    assert g.los_heading(np.array([[-10.0, 95.0]]), 10.0)[0] == pytest.approx(
-        np.arctan2(5.0, 10.0)
-    )
+    assert g.los_heading(np.array([[-10.0, 95.0]]), 10.0)[0] == pytest.approx(np.arctan2(5.0, 10.0))
 
     pos_los, s_los = g.lookahead_point(np.array([0.0, -10.0]), 10.0)
     assert s_los == pytest.approx(10.0)
@@ -436,9 +426,7 @@ def test_los_matches_polyline_los_on_straight_paths():
     for path in (NORTH, EAST):
         geom = PathGeometry(path)
         points = np.array([[20.0, 3.0], [50.0, -4.0], [120.0, 10.0]])
-        assert np.allclose(
-            geom.los_heading(points, 8.0), los_heading(points, path, 8.0)
-        )
+        assert np.allclose(geom.los_heading(points, 8.0), los_heading(points, path, 8.0))
 
 
 # --- API, immutability, sampling --------------------------------------------

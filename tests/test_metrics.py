@@ -93,9 +93,7 @@ def test_thrust_saturation_duration_with_asymmetric_bounds():
     # Asymmetric thrust bounds [-10, 50] N: with threshold 0.99 the span is
     # 60 N and a sample saturates when |thrust - 20| >= 29.4 N (within 0.6 N
     # of a bound). The final saturated sample (t = 3 s) bounds no interval.
-    params = _core.ModelParams(
-        thrust_min=-10.0, thrust_max=50.0, moment_min=-2.0, moment_max=8.0
-    )
+    params = _core.ModelParams(thrust_min=-10.0, thrust_max=50.0, moment_min=-2.0, moment_max=8.0)
     result = make_result(
         np.full(4, 50.0),
         np.zeros(4),
@@ -111,9 +109,7 @@ def test_thrust_saturation_duration_with_asymmetric_bounds():
 def test_union_saturation_duration_no_double_counting():
     # Thrust saturates on interval 0, moment on intervals 0 and 1: the union
     # counts interval 0 once (2 intervals total, not 3).
-    params = _core.ModelParams(
-        thrust_min=-10.0, thrust_max=50.0, moment_min=-2.0, moment_max=8.0
-    )
+    params = _core.ModelParams(thrust_min=-10.0, thrust_max=50.0, moment_min=-2.0, moment_max=8.0)
     result = make_result(
         np.full(4, 50.0),
         np.zeros(4),

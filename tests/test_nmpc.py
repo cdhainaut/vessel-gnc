@@ -75,13 +75,9 @@ def test_model_matches_cpp_kernel_with_disturbance():
         cmd = _core.Control(thrust=u[0], yaw_moment=u[1])
         for _ in range(nmpc.config.substeps):
             actuator = _core.actuator_step(actuator, cmd, PARAMS, h)
-            applied = _core.Control(
-                thrust=actuator.thrust, yaw_moment=actuator.yaw_moment
-            )
+            applied = _core.Control(thrust=actuator.thrust, yaw_moment=actuator.yaw_moment)
             s = _core.rk4_step(s, applied, environment, PARAMS, h)
-        cpp = np.array(
-            [s.x, s.y, s.psi, s.u, s.v, s.r, actuator.thrust, actuator.yaw_moment]
-        )
+        cpp = np.array([s.x, s.y, s.psi, s.u, s.v, s.r, actuator.thrust, actuator.yaw_moment])
         worst = max(worst, float(np.max(np.abs(cas - cpp))))
     assert worst < 1e-8
 
@@ -188,9 +184,7 @@ def test_warm_start_is_shifted_solution():
     )
     n = nmpc.config.horizon
     X = w[: 8 * (n + 1)].reshape(8, n + 1, order="F")
-    np.testing.assert_allclose(
-        X[:, 0], [5.3, 1.1, 0.12, 1.2, 0.0, 0.0, 0.0, 0.0], atol=1e-12
-    )
+    np.testing.assert_allclose(X[:, 0], [5.3, 1.1, 0.12, 1.2, 0.0, 0.0, 0.0, 0.0], atol=1e-12)
     np.testing.assert_allclose(X[:, 1], nmpc.last_trajectory[:, 2], atol=1e-12)
     U = w[8 * (n + 1) :].reshape(2, n, order="F")
     np.testing.assert_allclose(U[:, 0], nmpc.last_controls[:, 1], atol=1e-12)

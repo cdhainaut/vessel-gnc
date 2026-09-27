@@ -36,12 +36,13 @@ cmake.args = ["-DBUILD_TESTING=OFF"]
 wheel.packages = ["python/vessel_gnc"]
 
 [tool.ruff]
-line-length = 88
+line-length = 100
 target-version = "py312"
 extend-exclude = ["build"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+select = ["E", "F", "W", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

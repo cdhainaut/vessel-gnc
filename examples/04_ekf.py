@@ -50,9 +50,7 @@ def main() -> None:
     plant_params = params
     rng = np.random.default_rng(SEED)
     sensors = SensorSuite(SENSORS, rng)
-    r_cov = {
-        name: SENSORS.covariance(name) for name in ("gnss", "compass", "speed", "gyro")
-    }
+    r_cov = {name: SENSORS.covariance(name) for name in ("gnss", "compass", "speed", "gyro")}
 
     heading = _core.HeadingController(_core.default_heading_gains())
     speed = _core.SpeedController(_core.default_speed_gains())
@@ -78,9 +76,7 @@ def main() -> None:
         (psi_los,) = los_heading(np.array([[xhat.x, xhat.y]]), path, LOOKAHEAD)
         moment = heading.update(psi_los, xhat.psi, xhat.r, CONTROL_PERIOD)
         thrust = speed.update(SPEED_REF, xhat.u, CONTROL_PERIOD)
-        prev_cmd = _core.clamp_control(
-            _core.Control(thrust=thrust, yaw_moment=moment), params
-        )
+        prev_cmd = _core.clamp_control(_core.Control(thrust=thrust, yaw_moment=moment), params)
 
         environment = SCENARIO.sample(t)
         t_rec.append(t)
@@ -121,10 +117,7 @@ def main() -> None:
         current_est[:, 0] - current_true[:, 0],
         current_est[:, 1] - current_true[:, 1],
     )
-    print(
-        f"position error: rms {np.sqrt(np.mean(pos_err**2)):.2f} m, "
-        f"max {np.max(pos_err):.2f} m"
-    )
+    print(f"position error: rms {np.sqrt(np.mean(pos_err**2)):.2f} m, max {np.max(pos_err):.2f} m")
     print(f"yaw-rate error: rms {np.sqrt(np.mean((r_true - r_hat) ** 2)):.3f} rad/s")
     print(
         f"current error (after 20 s): "
@@ -149,9 +142,7 @@ def main() -> None:
 
     t_gyro, r_meas_arr = zip(*r_meas, strict=True) if r_meas else ([], [])
     ax_r.plot(t_arr, r_true, color="0.6", lw=1.4, label="true")
-    ax_r.plot(
-        t_gyro, r_meas_arr, color="tab:red", lw=0.8, alpha=0.5, label="gyro (raw)"
-    )
+    ax_r.plot(t_gyro, r_meas_arr, color="tab:red", lw=0.8, alpha=0.5, label="gyro (raw)")
     ax_r.plot(t_arr, r_hat, color="tab:blue", lw=1.4, label="EKF")
     ax_r.set_xlabel("t [s]")
     ax_r.set_ylabel("yaw rate r [rad/s]")
@@ -165,16 +156,10 @@ def main() -> None:
     ax_err.set_title("Estimation error")
     ax_err.grid(alpha=0.3)
 
-    ax_cur.plot(
-        t_arr, current_true[:, 0], color="tab:orange", lw=1.2, label="V_cx true"
-    )
-    ax_cur.plot(
-        t_arr, current_est[:, 0], color="tab:orange", lw=1.2, ls="--", label="V_cx est."
-    )
+    ax_cur.plot(t_arr, current_true[:, 0], color="tab:orange", lw=1.2, label="V_cx true")
+    ax_cur.plot(t_arr, current_est[:, 0], color="tab:orange", lw=1.2, ls="--", label="V_cx est.")
     ax_cur.plot(t_arr, current_true[:, 1], color="tab:blue", lw=1.2, label="V_cy true")
-    ax_cur.plot(
-        t_arr, current_est[:, 1], color="tab:blue", lw=1.2, ls="--", label="V_cy est."
-    )
+    ax_cur.plot(t_arr, current_est[:, 1], color="tab:blue", lw=1.2, ls="--", label="V_cy est.")
     ax_cur.set_xlabel("t [s]")
     ax_cur.set_ylabel("current [m/s]")
     ax_cur.set_title("Ambient current: true vs estimated")
@@ -186,9 +171,7 @@ def main() -> None:
 
     # Dedicated current-estimation figure (portfolio plan §9).
     fig_cur, ax_c = plt.subplots(figsize=(7.2, 4.4), constrained_layout=True)
-    ax_c.plot(
-        t_arr, current_true[:, 0], color="tab:orange", lw=1.4, label="true (north)"
-    )
+    ax_c.plot(t_arr, current_true[:, 0], color="tab:orange", lw=1.4, label="true (north)")
     ax_c.plot(
         t_arr,
         current_est[:, 0],

@@ -13,9 +13,7 @@ from vessel_gnc import _core
 def test_kinematics_through_binding():
     # Heading East with pure surge moves along +y.
     s = _core.State(u=2.0, psi=np.pi / 2)
-    d = _core.derivative(
-        s, _core.Control(), _core.Environment(), _core.default_params()
-    )
+    d = _core.derivative(s, _core.Control(), _core.Environment(), _core.default_params())
     assert d.x == pytest.approx(0.0, abs=1e-12)
     assert d.y == pytest.approx(2.0, abs=1e-12)
 
@@ -57,9 +55,7 @@ def test_open_loop_straight_line():
 def test_open_loop_turns_east():
     # Constant yaw moment: the vessel turns clockwise (toward East) and
     # develops a port sideslip (bow into the turn, v < 0).
-    r = vessel_gnc.simulate(
-        30.0, 0.01, control=_core.Control(thrust=25.0, yaw_moment=2.0)
-    )
+    r = vessel_gnc.simulate(30.0, 0.01, control=_core.Control(thrust=25.0, yaw_moment=2.0))
     assert r.y[-1] > 15.0
     assert 1.0 < r.psi[-1] < 3.0
     assert r.v[-1] < 0.0
@@ -98,8 +94,6 @@ def test_animation_with_horizon(tmp_path):
         (2.0, np.tile([2.0, 0.0, 0.0, 1.2, 0.0, 0.0], (26, 1)).T),
     ]
     out = tmp_path / "hero.gif"
-    animate_trajectory(
-        r, output_path=out, stride=10, fps=5, reference_path=path, horizon=horizon
-    )
+    animate_trajectory(r, output_path=out, stride=10, fps=5, reference_path=path, horizon=horizon)
     assert out.exists()
     assert out.stat().st_size > 1000

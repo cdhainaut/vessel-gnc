@@ -88,9 +88,7 @@ class VesselEKF:
             dtype=float,
         )
         self.x = np.asarray(state0 if state0 is not None else [0.0] * 8, dtype=float)
-        self.P = np.diag(
-            np.asarray(cov0 if cov0 is not None else _DEFAULT_COV0, dtype=float)
-        )
+        self.P = np.diag(np.asarray(cov0 if cov0 is not None else _DEFAULT_COV0, dtype=float))
         # The filter carries the nominal actuator state as a known quantity
         # (docs/model.md §5); the current is part of the estimated state.
         self.actuator = _core.ActuatorState()
@@ -128,19 +126,13 @@ class VesselEKF:
         The command goes through the nominal actuator model; the resulting
         applied forces drive the vessel prediction.
         """
-        self.actuator = _core.actuator_step(
-            self.actuator, control, self.params, self.dt
-        )
-        applied = _core.Control(
-            thrust=self.actuator.thrust, yaw_moment=self.actuator.yaw_moment
-        )
+        self.actuator = _core.actuator_step(self.actuator, control, self.params, self.dt)
+        applied = _core.Control(thrust=self.actuator.thrust, yaw_moment=self.actuator.yaw_moment)
         F = self._jacobian(applied)
         self.x = self._propagate(self.x, applied)
         self.P = F @ self.P @ F.T + np.diag(self.q)
 
-    def observe(
-        self, measurements: dict[str, np.ndarray], r: dict[str, np.ndarray]
-    ) -> None:
+    def observe(self, measurements: dict[str, np.ndarray], r: dict[str, np.ndarray]) -> None:
         """Update with the available measurements (Joseph form).
 
         Args:
@@ -150,9 +142,7 @@ class VesselEKF:
         for name, z in measurements.items():
             if name not in SENSOR_INDICES:
                 raise ValueError(f"unknown sensor '{name}'")
-            self._update_linear(
-                z, SENSOR_INDICES[name], r[name], name in WRAP_INNOVATION
-            )
+            self._update_linear(z, SENSOR_INDICES[name], r[name], name in WRAP_INNOVATION)
 
     # --- internals ---------------------------------------------------------
 
@@ -179,9 +169,7 @@ class VesselEKF:
             )
         return F
 
-    def _update_linear(
-        self, z: np.ndarray, indices: list[int], r: np.ndarray, wrap: bool
-    ) -> None:
+    def _update_linear(self, z: np.ndarray, indices: list[int], r: np.ndarray, wrap: bool) -> None:
         H = np.zeros((len(indices), 8))
         H[np.arange(len(indices)), indices] = 1.0
         innovation = z - H @ self.x

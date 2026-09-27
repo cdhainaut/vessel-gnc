@@ -61,9 +61,7 @@ class EnvironmentScenario:
 
         wind_east = self.wind_mean_east
         for gust_time in self.gust_times:
-            wind_east += self.gust_peak * np.exp(
-                -0.5 * ((t - gust_time) / self.gust_width) ** 2
-            )
+            wind_east += self.gust_peak * np.exp(-0.5 * ((t - gust_time) / self.gust_width) ** 2)
         return _core.Environment(
             current_north=float(current_north),
             current_east=float(current_east),

@@ -114,9 +114,7 @@ def path_arc_lengths(path: np.ndarray) -> np.ndarray:
     return np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(path, axis=0).T))])
 
 
-def path_points(
-    path: np.ndarray, arc_lengths: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
+def path_points(path: np.ndarray, arc_lengths: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Positions and tangent headings at absolute arc lengths along the path.
 
     Arc lengths are clamped to the path ends. Returns ``(refs, psi_refs)`` of
