@@ -108,7 +108,10 @@ class ReferenceScenarioConfig:
     truth_params: _core.ModelParams = field(default_factory=_core.truth_params)
     estimator_transient_s: float = 20.0  # [s] discarded before current-error stats
     render_fps: int = 12  # hero animation frame rate
-    render_hero_stride_frames: int = 40  # hero frame period = stride * dt
+    # Hero frame period = stride * dt (0.8 s): ~150 frames over the 120 s
+    # flagship keep the GIF light and the render fast without visible
+    # stepping at the scenario's spatial scale.
+    render_hero_stride_frames: int = 80
     render_hero_wake_duration_s: float = 12.0  # [s] hero wake trail length
     mpcc: MpccConfig = field(default_factory=MpccConfig)
     path_render_samples: int = 501  # rendering-only smooth-path samples

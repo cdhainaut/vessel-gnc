@@ -229,7 +229,7 @@
           ],
           "properties": {
             "fps": { "const": 12 },
-            "hero_stride_frames": { "const": 40 },
+            "hero_stride_frames": { "const": 80 },
             "hero_wake_duration_s": { "const": 12.0 },
             "horizon_shot_times_s": {
               "type": "array",
