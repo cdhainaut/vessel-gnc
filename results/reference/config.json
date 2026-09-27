@@ -1,7 +1,7 @@
 {
   "$schema": "results/reference/reference.schema.json",
   "artifact_type": "config",
-  "git_commit": "3ed5a9fe36fd5eff3cc824b1ff9a338a328ebf7a",
+  "git_commit": "dec0802642417ed3b5f1eaf86f131926fdc591c5",
   "scenario": {
     "components": {
       "controller_disturbance_aware_mpcc": "disturbance_aware_mpcc_v1",
@@ -185,7 +185,7 @@
     },
     "render": {
       "fps": 12,
-      "hero_stride_frames": 40,
+      "hero_stride_frames": 80,
       "hero_wake_duration_s": 12.0,
       "horizon_shot_times_s": [
         20.0,
