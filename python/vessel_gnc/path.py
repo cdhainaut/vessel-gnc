@@ -281,6 +281,7 @@ class PathGeometry:
         "_n_segments",
         "_coeff_n",
         "_coeff_e",
+        "_segment_bounds",
         "_f_position",
         "_f_derivative",
         "_f_unit_tangent",
@@ -304,7 +305,31 @@ class PathGeometry:
         self._n_segments = len(chords)
         self._coeff_n = coeff_n
         self._coeff_e = coeff_e
+        self._segment_bounds = self._compute_segment_bounds()
         self._build_casadi()
+
+    def _compute_segment_bounds(self) -> np.ndarray:
+        """Exact axis-aligned bounds of every segment (projection pruning).
+
+        A cubic attains its extrema at the interval endpoints and at the real
+        roots of its derivative, so the bounds are exact. The projection uses
+        them to skip segments whose bounding box is strictly farther from a
+        query point than the best candidate so far.
+        """
+        bounds = np.empty((self._n_segments, 2, 2))
+        for segment in range(self._n_segments):
+            powers = self._chord[segment] ** np.arange(4)
+            for axis, coefficients in enumerate((self._coeff_n, self._coeff_e)):
+                scaled = coefficients[segment] * powers
+                derivative = np.arange(1, 4) * scaled[1:]
+                critical = _real_roots_in_unit_interval(derivative)
+                samples = np.concatenate(([0.0, 1.0], critical))
+                values = scaled[0] + samples * (
+                    scaled[1] + samples * (scaled[2] + samples * scaled[3])
+                )
+                bounds[segment, axis] = (values.min(), values.max())
+        bounds.flags.writeable = False
+        return bounds
 
     # --- introspection -----------------------------------------------------
 
@@ -494,10 +519,29 @@ class PathGeometry:
                 raise ValueError("progress_hint_m must be a finite scalar or an (n,) array")
 
         progress = np.empty(n_points)
+        knot_positions = self.position(self._knots)
         for point_index, point in enumerate(pts):
+            best_squared = float(np.min(((knot_positions - point) ** 2).sum(axis=1)))
             candidate_progress = [self._knots]
             for segment in range(self._n_segments):
-                candidate_progress.append(self._stationary_progress(point, segment))
+                bounds = self._segment_bounds[segment]  # axis -> (min, max)
+                dn = max(bounds[0, 0] - point[0], 0.0, point[0] - bounds[0, 1])
+                de = max(bounds[1, 0] - point[1], 0.0, point[1] - bounds[1, 1])
+                if dn * dn + de * de > best_squared:
+                    # Strictly farther than the best candidate: this segment
+                    # can neither improve the minimum nor tie it, so its
+                    # stationary roots cannot affect the deterministic
+                    # earliest-progress tie break.
+                    continue
+                stationary = self._stationary_progress(point, segment)
+                if stationary.size == 0:
+                    continue
+                candidate_progress.append(stationary)
+                root_positions = self.position(stationary)
+                best_squared = min(
+                    best_squared,
+                    float(np.min(((root_positions - point) ** 2).sum(axis=1))),
+                )
             candidates = np.unique(np.concatenate(candidate_progress))
             candidate_positions = self.position(candidates)
             distance_squared = ((candidate_positions - point) ** 2).sum(axis=1)
@@ -546,7 +590,13 @@ class PathGeometry:
         s_los = float(np.clip(s_proj + lookahead, 0.0, self.length))
         return self.position(s_los), s_los
 
-    def los_heading(self, points: np.ndarray, lookahead: float) -> np.ndarray:
+    def los_heading(
+        self,
+        points: np.ndarray,
+        lookahead: float,
+        *,
+        progress: np.ndarray | None = None,
+    ) -> np.ndarray:
         """Exact smooth-geometry LOS desired heading [rad] at each point.
 
         Exact counterpart of ``guidance.los_heading`` on the polyline: the
@@ -558,6 +608,8 @@ class PathGeometry:
         Args:
             points: (n, 2) or (2,) positions [m] (North, East).
             lookahead: lookahead distance [m], must be positive.
+            progress: optional (n,) projection progress [m] from
+                :meth:`project`, reused to avoid projecting twice.
 
         Returns:
             (n,) desired headings [rad].
@@ -565,7 +617,13 @@ class PathGeometry:
         if lookahead <= 0.0:
             raise ValueError("lookahead must be positive")
         pts = np.atleast_2d(np.asarray(points, dtype=float))
-        s_los = np.clip(self.project(pts).progress + lookahead, 0.0, self.length)
+        if progress is None:
+            projected = self.project(pts).progress
+        else:
+            projected = np.asarray(progress, dtype=float)
+            if projected.shape != (pts.shape[0],) or not np.all(np.isfinite(projected)):
+                raise ValueError("progress must be a finite (n,) array")
+        s_los = np.clip(projected + lookahead, 0.0, self.length)
         los = self.position(s_los)
         return np.arctan2(los[:, 1] - pts[:, 1], los[:, 0] - pts[:, 0])
 

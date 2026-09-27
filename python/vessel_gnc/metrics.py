@@ -97,7 +97,7 @@ def path_following_metrics(
         projection = path.project(points)
         progress = projection.progress
         cross = projection.cross_track
-        psi_los = path.los_heading(points, lookahead)
+        psi_los = path.los_heading(points, lookahead, progress=progress)
         path_length = path.length
     else:
         segment, along_track, cross = project_onto_path(points, path)
