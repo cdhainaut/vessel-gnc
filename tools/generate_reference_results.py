@@ -8,10 +8,23 @@ markers. ``--check`` validates schema, config, scenario, source fingerprint
 and artifact hashes without any simulation or benchmark;
 ``--verify-determinism`` performs one fresh reference run and compares its
 deterministic metrics with the committed ``metrics.json`` under the
-reproducibility contract: LOS baseline metrics exactly, NMPC and estimator
-metrics within ``rtol=1e-6, atol=1e-6`` (IPOPT solves to ``tol=1e-4`` and
-its full-precision iterates may differ in the last ulps), reporting the
-worst offending key and deviation on failure.
+reproducibility contract: LOS baseline metrics exactly, NMPC, MPCC and
+estimator metrics within ``rtol=1e-6, atol=1e-6`` (IPOPT solves to
+``tol=1e-4`` and its full-precision iterates may differ in the last ulps),
+reporting the worst offending key and deviation on failure.
+
+Reproducibility contract — canonical generation runs **single-threaded
+BLAS**. Before any NumPy/CasADi import this module pins the OpenBLAS, OMP,
+MKL and NumExpr thread counts to one via ``os.environ.setdefault``. IPOPT
+factorizations (MUMPS) and NumPy reductions are deterministic only when the
+linear-algebra backends do not schedule work across threads: multithreaded
+BLAS can flip the last-ulp IPOPT iterate path and with it the accepted
+status of borderline solves, which breaks the ``rtol=1e-6`` deterministic
+metric contract between generation and ``--verify-determinism``. Pinning is
+a tool-level contract for the canonical artifacts and is intentionally
+*not* applied inside the library package, so library consumers keep control
+of their own thread configuration. The pinning uses ``setdefault`` so an
+explicit caller environment is never overridden.
 
 Provenance semantics: ``config.json``/``benchmark.json`` record the
 ``git_commit`` and ``metadata.json`` records the ``dirty`` flag of the
@@ -41,6 +54,18 @@ Run from the repository root:
 """
 
 from __future__ import annotations
+
+import os
+
+# Single-threaded BLAS for run-to-run determinism of the canonical
+# artifacts (see the reproducibility contract in the module docstring).
+# Must run before any NumPy/CasADi import below, which is why this sits
+# above the argparse/vessel_gnc imports. ``setdefault`` keeps an explicit
+# caller environment intact.
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 import argparse
 from pathlib import Path
@@ -83,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help=(
             "run one fresh reference and compare its deterministic metrics "
-            "with the committed metrics.json (LOS exact, NMPC/estimator "
+            "with the committed metrics.json (LOS exact, NMPC/MPCC/estimator "
             "within rtol=1e-6, atol=1e-6)"
         ),
     )
@@ -110,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "determinism verified: fresh reference metrics match "
             "results/reference/metrics.json within the reproducibility "
-            "contract (LOS exact, NMPC/estimator rtol=1e-6, atol=1e-6)"
+            "contract (LOS exact, NMPC/MPCC/estimator rtol=1e-6, atol=1e-6)"
         )
         return 0
 
@@ -126,7 +151,7 @@ def _generate_default() -> None:
     """
     print("running the flagship reference scenario (120 s) ...")
     run = run_reference_scenario()
-    print("running the separate benchmark workload (60 s NMPC) ...")
+    print("running the separate matched benchmark workloads (60 s each) ...")
     benchmark = _run_benchmarks()
     rendered = render_reference_assets(run, REPO_ROOT)
     write_reference_json(run, benchmark, REFERENCE_DIR)

@@ -8,6 +8,7 @@ by hand.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -229,6 +230,10 @@ def animate_trajectory(
     reference_path: np.ndarray | None = None,
     horizon: list[tuple[float, np.ndarray]] | None = None,
     horizon_label: str = "NMPC prediction",
+    extra_trajectories: list[tuple[str, np.ndarray, str]] | None = None,
+    extra_horizon: list[tuple[float, np.ndarray]] | None = None,
+    extra_horizon_label: str = "MPCC prediction",
+    progress_text: Callable[[float, float, float], str | None] | None = None,
 ) -> animation.FuncAnimation:
     """Render a top-down animation of the vessel along the trajectory.
 
@@ -236,9 +241,16 @@ def animate_trajectory(
     brighter trail), a fading speed-coloured wake, environment arrows and a
     time/speed/heading overlay. With ``reference_path`` and ``horizon`` the
     scene becomes the flagship demo: the reference path is drawn dashed and
-    the NMPC predicted trajectory is shown ahead of the vessel, taken from
-    the nearest recorded prediction (``horizon``: list of ``(t, traj)`` with
-    ``traj`` a (6, N+1) predicted trajectory).
+    the predictive horizon is shown ahead of the vessel, taken from the
+    nearest recorded prediction (``horizon``: list of ``(t, traj)`` with
+    ``traj`` a (6, N+1) or (8, N+1) predicted trajectory).
+
+    ``extra_trajectories`` draws additional static controller trajectories as
+    comparison lines (each ``(label, (M, 2) positions, color)``);
+    ``extra_horizon`` draws a second, distinct predicted horizon series
+    (e.g. the MPCC recorded predictions) with its own label. ``progress_text``
+    is an optional ``(t, x, y) -> str | None`` callback whose returned line is
+    appended to the overlay (used for compact path-progress information).
 
     Args:
         result: simulation result to animate.
@@ -254,9 +266,14 @@ def animate_trajectory(
         wake_duration: length of the fading wake trail [s].
         dpi: GIF resolution.
         reference_path: (M, 2) waypoints drawn as the reference path.
-        horizon: recorded NMPC predictions, shown per frame.
-        horizon_label: legend entry for the prediction line (e.g.
-            "NMPC prediction (10 s horizon)").
+        horizon: recorded predictive predictions, shown per frame.
+        horizon_label: legend entry for the prediction line.
+        extra_trajectories: static comparison trajectories
+            (``(label, (M, 2) positions, color)``).
+        extra_horizon: recorded second prediction series, shown per frame
+            (same ``(t, traj)`` shape as ``horizon``).
+        extra_horizon_label: legend entry for the second prediction line.
+        progress_text: optional callback returning a path-progress line.
     """
     speed = np.hypot(result.u, result.v)
 
@@ -274,6 +291,13 @@ def animate_trajectory(
         x_hi = max(x_hi, rp[:, 0].max())
         y_lo = min(y_lo, rp[:, 1].min())
         y_hi = max(y_hi, rp[:, 1].max())
+    if extra_trajectories:
+        for _, positions, _color in extra_trajectories:
+            pts = np.asarray(positions)
+            x_lo = min(x_lo, pts[:, 0].min())
+            x_hi = max(x_hi, pts[:, 0].max())
+            y_lo = min(y_lo, pts[:, 1].min())
+            y_hi = max(y_hi, pts[:, 1].max())
     ax.set_xlim(x_lo - margin, x_hi + margin)
     ax.set_ylim(y_lo - margin, y_hi + margin)
 
@@ -285,11 +309,36 @@ def animate_trajectory(
         legend_entries.append(
             (plt.Line2D([], [], color="k", ls="--", lw=1.2), "reference")
         )
+    if extra_trajectories:
+        for label, positions, color in extra_trajectories:
+            pts = np.asarray(positions)
+            ax.plot(pts[:, 0], pts[:, 1], color=color, lw=1.1, alpha=0.85, zorder=2)
+            legend_entries.append(
+                (
+                    plt.Line2D(
+                        [],
+                        [],
+                        color=color,
+                        lw=1.6,
+                        alpha=0.85,
+                        marker="o",
+                        ms=3,
+                    ),
+                    label,
+                )
+            )
     if horizon:
         legend_entries.append(
             (
                 plt.Line2D([], [], color="tab:cyan", lw=1.6, marker="o", ms=4),
                 horizon_label,
+            )
+        )
+    if extra_horizon:
+        legend_entries.append(
+            (
+                plt.Line2D([], [], color="tab:purple", lw=1.6, marker="o", ms=3),
+                extra_horizon_label,
             )
         )
     if legend_entries:
@@ -328,9 +377,14 @@ def animate_trajectory(
     wake = ax.scatter([], [], s=14, zorder=2)
     (horizon_line,) = ax.plot([], [], color="tab:cyan", lw=1.6, zorder=4)
     (horizon_end,) = ax.plot([], [], "o", color="tab:cyan", ms=5, zorder=4)
+    (extra_horizon_line,) = ax.plot([], [], color="tab:purple", lw=1.6, zorder=4)
+    (extra_horizon_end,) = ax.plot([], [], "o", color="tab:purple", ms=5, zorder=4)
 
     # Horizon shots sorted by time, for per-frame lookup.
     horizon_times = np.array([t for t, _ in horizon]) if horizon else np.empty(0)
+    extra_horizon_times = (
+        np.array([t for t, _ in extra_horizon]) if extra_horizon else np.empty(0)
+    )
 
     wake_steps = max(1, int(wake_duration / result.dt))
     indices = np.arange(0, result.n_steps + 1, stride)
@@ -378,13 +432,39 @@ def animate_trajectory(
             horizon_line.set_data([], [])
             horizon_end.set_data([], [])
 
+        if extra_horizon:
+            idx = int(np.searchsorted(extra_horizon_times, result.t[i], side="right"))
+            idx = max(0, idx - 1)
+            traj = extra_horizon[idx][1]
+            extra_horizon_line.set_data(traj[0], traj[1])
+            extra_horizon_end.set_data([traj[0, -1]], [traj[1, -1]])
+        else:
+            extra_horizon_line.set_data([], [])
+            extra_horizon_end.set_data([], [])
+
         _set_vessel_pose(hull, heading, result.x[i], result.y[i], result.psi[i])
+        progress_line = ""
+        if progress_text is not None:
+            line = progress_text(result.t[i], result.x[i], result.y[i])
+            if line:
+                progress_line = line + "\n"
         info.set_text(
-            f"t = {result.t[i]:5.1f} s\n"
-            f"V = {speed[i]:4.2f} m/s\n"
-            f"psi = {np.degrees(result.psi[i]):6.1f} deg"
+            progress_line
+            + f"t = {result.t[i]:5.1f} s\n"
+            + f"V = {speed[i]:4.2f} m/s\n"
+            + f"psi = {np.degrees(result.psi[i]):6.1f} deg"
         )
-        return (trail_line, wake, hull, heading, info, horizon_line, horizon_end)
+        return (
+            trail_line,
+            wake,
+            hull,
+            heading,
+            info,
+            horizon_line,
+            horizon_end,
+            extra_horizon_line,
+            extra_horizon_end,
+        )
 
     anim = animation.FuncAnimation(
         fig, update, frames=len(indices), interval=1000 // fps, blit=False
@@ -400,13 +480,13 @@ def plot_reference_trajectories(
     run: ReferenceRun,
     output_path: str | os.PathLike[str],
 ) -> plt.Figure:
-    """Reference-run trajectory overview: LOS vs NMPC with prediction horizons.
+    """Reference-run trajectory overview: four controllers with horizons.
 
-    Draws the reference path, all controller trajectories, the
-    disturbance-aware prediction horizons and the true environment sampled
-    at four times along the aware trajectory. Saved
-    to ``output_path`` (the ignored results figure of the reference
-    pipeline).
+    Draws the reference path, the four controller trajectories (LOS, nominal
+    NMPC, disturbance-aware NMPC, geometric MPCC), the disturbance-aware
+    NMPC prediction horizons, the MPCC predicted horizon and the true
+    environment sampled at four times along the aware trajectory. Saved to
+    ``output_path`` (the ignored results figure of the reference pipeline).
 
     Args:
         run: the in-memory reference run.
@@ -427,6 +507,11 @@ def plot_reference_trajectories(
     los_result = run.los.result
     nominal_result = run.nmpc.result
     aware_result = run.disturbance_aware_nmpc.result
+    mpcc_result = (
+        run.disturbance_aware_mpcc.result
+        if run.disturbance_aware_mpcc is not None
+        else None
+    )
 
     fig, ax = plt.subplots(figsize=(8.0, 6.6))
     ax.plot(path[:, 0], path[:, 1], "k--", lw=1.2, label="reference path")
@@ -445,8 +530,19 @@ def plot_reference_trajectories(
         lw=1.7,
         label="disturbance-aware NMPC",
     )
+    if mpcc_result is not None:
+        ax.plot(
+            mpcc_result.x,
+            mpcc_result.y,
+            color="tab:purple",
+            lw=1.4,
+            label="geometric MPCC",
+        )
     for _, traj in run.disturbance_aware_nmpc.horizon:
         ax.plot(traj[0], traj[1], color="tab:cyan", lw=1.0, alpha=0.7)
+    if run.disturbance_aware_mpcc is not None:
+        for _, traj in run.disturbance_aware_mpcc.horizon:
+            ax.plot(traj[0], traj[1], color="tab:purple", lw=1.0, alpha=0.35)
     ax.plot(
         aware_result.x[0],
         aware_result.y[0],
@@ -485,7 +581,7 @@ def plot_reference_trajectories(
     ax.set_aspect("equal")
     ax.set_xlabel("x [m] (North)")
     ax.set_ylabel("y [m] (East)")
-    ax.set_title("LOS vs nominal and disturbance-aware NMPC")
+    ax.set_title("LOS vs nominal/aware NMPC and geometric MPCC")
     plot_handles, plot_labels = ax.get_legend_handles_labels()
     plot_handles.extend(handle for handle, _ in environment_handles)
     plot_labels.extend(label for _, label in environment_handles)
@@ -504,13 +600,14 @@ def plot_controller_comparison(
     metrics: dict[str, object],
     output_path: str | os.PathLike[str],
 ) -> plt.Figure:
-    """Deterministic LOS/nominal/aware comparison (tracking and controls).
+    """Deterministic LOS/NMPC/MPCC comparison (tracking, controls, progress).
 
     Timing is deliberately absent from this figure: wall-clock data lives
     exclusively in ``benchmark.json`` and the generated benchmark tables.
     The four panels show the signed cross-track error, the applied surge
     thrust and yaw moment (with the physical truth-plant actuator bounds)
-    and a metrics table assembled from the deterministic reference metrics.
+    and a metrics table assembled from the deterministic reference metrics,
+    including compact path-progress rows and route completion.
 
     Args:
         run: the in-memory reference run.
@@ -532,9 +629,16 @@ def plot_controller_comparison(
     los_result = run.los.result
     nominal_result = run.nmpc.result
     aware_result = run.disturbance_aware_nmpc.result
+    mpcc_result = (
+        run.disturbance_aware_mpcc.result
+        if run.disturbance_aware_mpcc is not None
+        else None
+    )
     los_metrics = metrics["controllers"]["los_pid_v1"]
     nominal_metrics = metrics["controllers"]["nominal_nmpc_v1"]
     aware_metrics = metrics["controllers"]["disturbance_aware_nmpc_v1"]
+    if run.disturbance_aware_mpcc is not None:
+        mpcc_metrics = metrics["controllers"]["disturbance_aware_mpcc_v1"]
     _, _, cross_los = project_onto_path(
         np.column_stack([los_result.x, los_result.y]), path
     )
@@ -544,6 +648,11 @@ def plot_controller_comparison(
     _, _, cross_aware = project_onto_path(
         np.column_stack([aware_result.x, aware_result.y]), path
     )
+    cross_mpcc = None
+    if mpcc_result is not None:
+        _, _, cross_mpcc = project_onto_path(
+            np.column_stack([mpcc_result.x, mpcc_result.y]), path
+        )
     bounds = run.config.truth_params
 
     fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.2), constrained_layout=True)
@@ -564,6 +673,14 @@ def plot_controller_comparison(
         lw=1.2,
         label="aware NMPC",
     )
+    if cross_mpcc is not None:
+        ax.plot(
+            mpcc_result.t,
+            cross_mpcc,
+            color="tab:purple",
+            lw=1.2,
+            label="geometric MPCC",
+        )
     ax.axhline(0.0, color="k", lw=0.8)
     ax.set_xlabel("t [s]")
     ax.set_ylabel("cross-track [m]")
@@ -587,6 +704,14 @@ def plot_controller_comparison(
         lw=1.0,
         label="aware NMPC",
     )
+    if mpcc_result is not None:
+        ax.plot(
+            mpcc_result.t,
+            mpcc_result.thrust,
+            color="tab:purple",
+            lw=1.0,
+            label="geometric MPCC",
+        )
     ax.axhline(bounds.thrust_max, color="r", ls=":", lw=1)
     ax.axhline(bounds.thrust_min, color="r", ls=":", lw=1)
     ax.set_xlabel("t [s]")
@@ -617,6 +742,14 @@ def plot_controller_comparison(
         lw=1.0,
         label="aware NMPC",
     )
+    if mpcc_result is not None:
+        ax.plot(
+            mpcc_result.t,
+            mpcc_result.yaw_moment,
+            color="tab:purple",
+            lw=1.0,
+            label="geometric MPCC",
+        )
     ax.axhline(bounds.moment_max, color="r", ls=":", lw=1)
     ax.axhline(bounds.moment_min, color="r", ls=":", lw=1)
     ax.set_xlabel("t [s]")
@@ -627,53 +760,63 @@ def plot_controller_comparison(
 
     ax = axes[1, 1]
     ax.axis("off")
-    rows = [
-        ("", "LOS", "Nominal", "Aware"),
-        (
-            "RMS cross-track [m]",
-            f"{los_metrics['cross_track_rms_m']:.2f}",
-            f"{nominal_metrics['cross_track_rms_m']:.2f}",
-            f"{aware_metrics['cross_track_rms_m']:.2f}",
-        ),
-        (
-            "Max cross-track [m]",
-            f"{los_metrics['cross_track_max_m']:.2f}",
-            f"{nominal_metrics['cross_track_max_m']:.2f}",
-            f"{aware_metrics['cross_track_max_m']:.2f}",
-        ),
-        (
-            "RMS heading error [deg]",
-            f"{np.degrees(los_metrics['heading_error_rms_rad']):.1f}",
-            f"{np.degrees(nominal_metrics['heading_error_rms_rad']):.1f}",
-            f"{np.degrees(aware_metrics['heading_error_rms_rad']):.1f}",
-        ),
-        (
-            "RMS thrust [N]",
-            f"{los_metrics['thrust_rms_N']:.1f}",
-            f"{nominal_metrics['thrust_rms_N']:.1f}",
-            f"{aware_metrics['thrust_rms_N']:.1f}",
-        ),
-        (
-            "Max yaw moment [N m]",
-            f"{los_metrics['moment_max_Nm']:.1f}",
-            f"{nominal_metrics['moment_max_Nm']:.1f}",
-            f"{aware_metrics['moment_max_Nm']:.1f}",
-        ),
-        (
-            "Any saturation [s]",
-            f"{los_metrics['any_saturation_duration_s']:.1f}",
-            f"{nominal_metrics['any_saturation_duration_s']:.1f}",
-            f"{aware_metrics['any_saturation_duration_s']:.1f}",
-        ),
-    ]
+    controller_metrics = [los_metrics, nominal_metrics, aware_metrics]
+    if run.disturbance_aware_mpcc is not None:
+        controller_metrics.append(mpcc_metrics)
+    rows = [("", "LOS", "Nominal", "Aware", "MPCC")]
+    rows.append(
+        ("RMS cross-track [m]",)
+        + tuple(f"{m['cross_track_rms_m']:.2f}" for m in controller_metrics)
+    )
+    rows.append(
+        ("Max cross-track [m]",)
+        + tuple(f"{m['cross_track_max_m']:.2f}" for m in controller_metrics)
+    )
+    rows.append(
+        ("RMS heading error [deg]",)
+        + tuple(
+            f"{np.degrees(m['heading_error_rms_rad']):.1f}" for m in controller_metrics
+        )
+    )
+    rows.append(
+        ("Final progress [m]",)
+        + tuple(f"{m['path_progress_final_m']:.1f}" for m in controller_metrics)
+    )
+    rows.append(
+        ("Progress fraction [-]",)
+        + tuple(f"{m['path_progress_fraction']:.3f}" for m in controller_metrics)
+    )
+    rows.append(
+        ("Mean progress rate [m/s]",)
+        + tuple(f"{m['mean_progress_rate_m_s']:.2f}" for m in controller_metrics)
+    )
+    rows.append(
+        ("Route completion [s]",)
+        + tuple(
+            "—" if m["route_completion_s"] is None else f"{m['route_completion_s']:.1f}"
+            for m in controller_metrics
+        )
+    )
+    rows.append(
+        ("RMS thrust [N]",)
+        + tuple(f"{m['thrust_rms_N']:.1f}" for m in controller_metrics)
+    )
+    rows.append(
+        ("Max yaw moment [N m]",)
+        + tuple(f"{m['moment_max_Nm']:.1f}" for m in controller_metrics)
+    )
+    rows.append(
+        ("Any saturation [s]",)
+        + tuple(f"{m['any_saturation_duration_s']:.1f}" for m in controller_metrics)
+    )
     table = ax.table(
         cellText=rows,
-        colWidths=[0.43, 0.19, 0.19, 0.19],
+        colWidths=[0.33, 0.14, 0.19, 0.17, 0.17],
         loc="center",
         cellLoc="center",
     )
     table.auto_set_font_size(False)
-    table.set_fontsize(9)
+    table.set_fontsize(8.5)
     table.scale(1.0, 1.6)
     ax.set_title("Comparison (deterministic metrics)")
 

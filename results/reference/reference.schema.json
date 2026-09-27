@@ -18,7 +18,7 @@
       "properties": {
         "$schema": { "type": "string", "description": "Path to results/reference/reference.schema.json from the repository root." },
         "artifact_type": { "const": "config" },
-        "schema_version": { "const": 2 },
+        "schema_version": { "const": 3 },
         "git_commit": { "type": "string", "description": "git rev-parse HEAD at generation time; the tree may additionally be dirty (see metadata.source_fingerprint)." },
         "scenario": { "$ref": "#/$defs/scenario" }
       }
@@ -29,24 +29,26 @@
       "required": [
         "id", "components", "description", "revision", "seed",
         "duration_s", "integration_dt_s", "control_periods", "path",
-        "environment", "sensors", "nmpc", "los", "nominal_params",
-        "truth_params", "render"
+        "environment", "sensors", "nmpc", "mpcc", "los",
+        "nominal_params", "truth_params", "render"
       ],
       "properties": {
-        "id": { "const": "scenario_v2_disturbance_aware" },
+        "id": { "const": "scenario_v3_mpcc" },
         "components": {
           "type": "object",
           "additionalProperties": false,
           "required": [
             "path", "environment", "controller_los", "controller_nmpc",
-            "controller_disturbance_aware_nmpc", "estimator"
+            "controller_disturbance_aware_nmpc",
+            "controller_disturbance_aware_mpcc", "estimator"
           ],
           "properties": {
-            "path": { "const": "s_curve_v1" },
+            "path": { "const": "smooth_s_curve_v1" },
             "environment": { "const": "rotating_current_gusts_v1" },
             "controller_los": { "const": "los_pid_v1" },
             "controller_nmpc": { "const": "nominal_nmpc_v1" },
             "controller_disturbance_aware_nmpc": { "const": "disturbance_aware_nmpc_v1" },
+            "controller_disturbance_aware_mpcc": { "const": "disturbance_aware_mpcc_v1" },
             "estimator": { "const": "augmented_current_ekf_v1" }
           }
         },
@@ -58,18 +60,47 @@
         "control_periods": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["los_s", "nmpc_s"],
+          "required": ["estimator_s", "los_s", "nmpc_s", "mpcc_s"],
           "properties": {
+            "estimator_s": { "const": 0.1 },
             "los_s": { "const": 0.1 },
-            "nmpc_s": { "const": 0.2 }
+            "nmpc_s": { "const": 0.2 },
+            "mpcc_s": { "const": 0.2 }
           }
         },
         "path": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["name", "speed_ref_m_s", "lookahead_m", "waypoints"],
+          "required": [
+            "name", "interpolation", "parameterization",
+            "parameterization_is_exact_arc_length", "out_of_domain_progress",
+            "projection", "progress_domain_start_m", "total_progress_m",
+            "speed_ref_m_s", "lookahead_m", "waypoints"
+          ],
           "properties": {
-            "name": { "const": "s_curve" },
+            "name": { "const": "smooth_s_curve" },
+            "interpolation": {
+              "const": "piecewise_cubic_hermite_pchip",
+              "description": "C1 piecewise-cubic Hermite interpolation with Fritsch-Carlson/PCHIP slopes, evaluated from the same stored coefficients in NumPy and CasADi."
+            },
+            "parameterization": {
+              "const": "cumulative_waypoint_chord_length_m",
+              "description": "Monotone progress coordinate in metres formed by cumulative distances between stored interpolation waypoints."
+            },
+            "parameterization_is_exact_arc_length": {
+              "const": false,
+              "description": "The progress coordinate is chord length, not exact analytical curve arc length."
+            },
+            "out_of_domain_progress": { "const": "clamped" },
+            "projection": {
+              "const": "global_closest_point_earliest_progress_tie_break"
+            },
+            "progress_domain_start_m": { "const": 0.0 },
+            "total_progress_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Upper bound and total available chord progress [m]; the progress fraction divides by this value."
+            },
             "speed_ref_m_s": { "const": 1.3 },
             "lookahead_m": { "const": 8.0 },
             "waypoints": {
@@ -144,6 +175,34 @@
             "warm_start": { "const": true }
           }
         },
+        "mpcc": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "horizon", "dt_s", "substeps", "q_contour", "q_lag",
+            "q_heading", "q_progress", "r_thrust", "r_moment",
+            "s_thrust", "s_moment", "r_vs", "s_vs",
+            "progress_speed_ref_m_s", "progress_speed_max_m_s", "warm_start"
+          ],
+          "properties": {
+            "horizon": { "const": 25 },
+            "dt_s": { "const": 0.4 },
+            "substeps": { "const": 2 },
+            "q_contour": { "const": 8.0, "description": "contouring-error weight [1/m^2]" },
+            "q_lag": { "const": 4.0, "description": "lag-error weight [1/m^2]" },
+            "q_heading": { "const": 1.5, "description": "wrapped path-heading-error weight [1/rad^2]" },
+            "q_progress": { "const": 8.25, "description": "bounded virtual-progress reward [s/m]" },
+            "r_thrust": { "const": 2e-3, "description": "command-effort weight [1/N^2]" },
+            "r_moment": { "const": 1e-2, "description": "command-effort weight [1/(N m)^2]" },
+            "s_thrust": { "const": 5e-3, "description": "command-increment weight [1/N^2]" },
+            "s_moment": { "const": 5e-2, "description": "command-increment weight [1/(N m)^2]" },
+            "r_vs": { "const": 0.5, "description": "virtual-speed reference weight [s^2/m^2]" },
+            "s_vs": { "const": 0.1, "description": "virtual-speed increment weight [s^2/m^2]" },
+            "progress_speed_ref_m_s": { "const": 1.3 },
+            "progress_speed_max_m_s": { "const": 2.0 },
+            "warm_start": { "const": true }
+          }
+        },
         "los": {
           "type": "object",
           "additionalProperties": false,
@@ -165,7 +224,8 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "fps", "hero_stride_frames", "hero_wake_duration_s", "horizon_shot_times_s"
+            "fps", "hero_stride_frames", "hero_wake_duration_s",
+            "horizon_shot_times_s", "path_render_samples"
           ],
           "properties": {
             "fps": { "const": 12 },
@@ -175,7 +235,8 @@
               "type": "array",
               "minItems": 1,
               "items": { "type": "number" }
-            }
+            },
+            "path_render_samples": { "const": 501 }
           }
         }
       }
@@ -231,18 +292,20 @@
       "properties": {
         "$schema": { "type": "string", "description": "Path to results/reference/reference.schema.json from the repository root." },
         "artifact_type": { "const": "metrics" },
-        "schema_version": { "const": 2 },
-        "scenario_id": { "const": "scenario_v2_disturbance_aware" },
+        "schema_version": { "const": 3 },
+        "scenario_id": { "const": "scenario_v3_mpcc" },
         "controllers": {
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "los_pid_v1", "nominal_nmpc_v1", "disturbance_aware_nmpc_v1"
+            "los_pid_v1", "nominal_nmpc_v1", "disturbance_aware_nmpc_v1",
+            "disturbance_aware_mpcc_v1"
           ],
           "properties": {
             "los_pid_v1": { "$ref": "#/$defs/controllerMetrics" },
             "nominal_nmpc_v1": { "$ref": "#/$defs/controllerMetrics" },
-            "disturbance_aware_nmpc_v1": { "$ref": "#/$defs/controllerMetrics" }
+            "disturbance_aware_nmpc_v1": { "$ref": "#/$defs/controllerMetrics" },
+            "disturbance_aware_mpcc_v1": { "$ref": "#/$defs/controllerMetrics" }
           }
         },
         "estimator": { "$ref": "#/$defs/estimatorMetrics" }
@@ -254,6 +317,8 @@
       "required": [
         "cross_track_rms_m", "cross_track_p95_m", "cross_track_max_m",
         "heading_error_rms_rad", "heading_error_max_rad",
+        "path_progress_final_m", "path_progress_fraction",
+        "mean_progress_rate_m_s", "route_completion_s",
         "thrust_rms_N", "thrust_max_N", "moment_rms_Nm", "moment_max_Nm",
         "thrust_saturation_duration_s", "moment_saturation_duration_s",
         "any_saturation_duration_s"
@@ -262,8 +327,12 @@
         "cross_track_rms_m": { "type": "number", "minimum": 0, "description": "RMS of the absolute signed cross-track error [m]" },
         "cross_track_p95_m": { "type": "number", "minimum": 0, "description": "95th percentile of the absolute cross-track error [m]" },
         "cross_track_max_m": { "type": "number", "minimum": 0, "description": "maximum absolute cross-track error [m]" },
-        "heading_error_rms_rad": { "type": "number", "minimum": 0, "description": "RMS of the wrapped LOS heading error [rad]" },
-        "heading_error_max_rad": { "type": "number", "minimum": 0, "description": "maximum absolute wrapped heading error [rad]" },
+        "heading_error_rms_rad": { "type": "number", "minimum": 0, "description": "RMS of the wrapped smooth-path LOS heading error [rad]" },
+        "heading_error_max_rad": { "type": "number", "minimum": 0, "description": "maximum absolute wrapped smooth-path LOS heading error [rad]" },
+        "path_progress_final_m": { "type": "number", "minimum": 0, "description": "final global closest-point chord progress [m]" },
+        "path_progress_fraction": { "type": "number", "minimum": 0, "description": "final chord progress divided by path.total_progress_m [-]" },
+        "mean_progress_rate_m_s": { "type": "number", "description": "final-minus-initial projected chord progress divided by elapsed simulation time [m/s]" },
+        "route_completion_s": { "type": ["number", "null"], "minimum": 0, "description": "first deterministic simulation time at which projected chord progress reaches 99% of path.total_progress_m [s], or null when incomplete" },
         "thrust_rms_N": { "type": "number", "minimum": 0, "description": "RMS of the applied (post-actuator) thrust [N]" },
         "thrust_max_N": { "type": "number", "minimum": 0, "description": "maximum absolute applied thrust [N]" },
         "moment_rms_Nm": { "type": "number", "minimum": 0, "description": "RMS of the applied (post-actuator) yaw moment [N m]" },
@@ -296,14 +365,15 @@
       "properties": {
         "$schema": { "type": "string", "description": "Path to results/reference/reference.schema.json from the repository root." },
         "artifact_type": { "const": "benchmark" },
-        "schema_version": { "const": 2 },
-        "benchmark_id": { "const": "benchmark_v2" },
+        "schema_version": { "const": 3 },
+        "benchmark_id": { "const": "benchmark_v3" },
         "git_commit": { "type": "string", "description": "git rev-parse HEAD at generation time; the tree may additionally be dirty (see metadata.source_fingerprint)." },
         "workloads": {
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "kernel", "simulation", "nmpc_nominal", "nmpc_disturbance_aware"
+            "kernel", "simulation", "nmpc_nominal", "nmpc_disturbance_aware",
+            "mpcc_disturbance_aware"
           ],
           "properties": {
             "kernel": {
@@ -328,7 +398,7 @@
             },
             "nmpc_nominal": {
               "allOf": [
-                { "$ref": "#/$defs/nmpcBenchmark" },
+                { "$ref": "#/$defs/predictiveControllerBenchmark" },
                 {
                   "type": "object",
                   "properties": {
@@ -339,11 +409,22 @@
             },
             "nmpc_disturbance_aware": {
               "allOf": [
-                { "$ref": "#/$defs/nmpcBenchmark" },
+                { "$ref": "#/$defs/predictiveControllerBenchmark" },
                 {
                   "type": "object",
                   "properties": {
                     "name": { "const": "disturbance_aware_s_curve_nmpc_60s" }
+                  }
+                }
+              ]
+            },
+            "mpcc_disturbance_aware": {
+              "allOf": [
+                { "$ref": "#/$defs/predictiveControllerBenchmark" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "name": { "const": "disturbance_aware_s_curve_mpcc_60s" }
                   }
                 }
               ]
@@ -352,13 +433,13 @@
         }
       }
     },
-    "nmpcBenchmark": {
+    "predictiveControllerBenchmark": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "name", "duration_s", "control_period_s", "samples", "mean_ms",
-        "median_ms", "p95_ms", "max_ms", "failed_solves",
-        "final_status_histogram"
+        "name", "duration_s", "control_period_s", "control_budget_ms",
+        "samples", "mean_ms", "median_ms", "p95_ms", "max_ms",
+        "failed_solves", "final_status_histogram"
       ],
       "properties": {
         "name": { "type": "string" },
@@ -367,6 +448,10 @@
           "description": "benchmark workload length, distinct from the 120 s reference scenario"
         },
         "control_period_s": { "const": 0.2 },
+        "control_budget_ms": {
+          "const": 200.0,
+          "description": "wall-clock solve budget corresponding to the 5 Hz controller period [ms]"
+        },
         "samples": { "type": "integer", "exclusiveMinimum": 0 },
         "mean_ms": { "type": "number", "exclusiveMinimum": 0 },
         "median_ms": { "type": "number", "exclusiveMinimum": 0 },
@@ -394,7 +479,7 @@
       "properties": {
         "$schema": { "type": "string", "description": "Path to results/reference/reference.schema.json from the repository root." },
         "artifact_type": { "const": "metadata" },
-        "schema_version": { "const": 2 },
+        "schema_version": { "const": 3 },
         "generated_at_utc": { "type": "string", "format": "date-time" },
         "software": {
           "type": "object",

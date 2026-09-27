@@ -14,17 +14,19 @@ import hashlib
 import json
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 import jsonschema
 import numpy as np
 import pytest
+import vessel_gnc
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:  # noqa: E402  (repo-local tool import)
     sys.path.insert(0, str(REPO_ROOT))
 
-from vessel_gnc.guidance import make_s_curve_path  # noqa: E402
+from vessel_gnc.path import make_s_curve_geometry  # noqa: E402
 from vessel_gnc.reference import (  # noqa: E402
     ControllerReferenceRun,
     EstimatorHistory,
@@ -32,6 +34,7 @@ from vessel_gnc.reference import (  # noqa: E402
     default_reference_config,
 )
 from vessel_gnc.reference_artifacts import (  # noqa: E402
+    BENCHMARK_ID,
     MARKDOWN_MARKERS,
     SCENARIO_ID,
     SCHEMA_VERSION,
@@ -55,6 +58,10 @@ CONTROLLER_METRIC_KEYS = (
     "cross_track_max_m",
     "heading_error_rms_rad",
     "heading_error_max_rad",
+    "path_progress_final_m",
+    "path_progress_fraction",
+    "mean_progress_rate_m_s",
+    "route_completion_s",
     "thrust_rms_N",
     "thrust_max_N",
     "moment_rms_Nm",
@@ -80,7 +87,8 @@ def _synthetic_run() -> ReferenceRun:
     ``reference_metrics`` has data for the current-error statistics.
     """
     config = default_reference_config()
-    path = make_s_curve_path()
+    path_geometry = make_s_curve_geometry()
+    path, _ = path_geometry.sample(config.path_render_samples)
     n = 3
     t = np.array([0.0, 10.0, 21.0])
 
@@ -127,13 +135,18 @@ def _synthetic_run() -> ReferenceRun:
             "Disturbance-aware NMPC",
             config.nmpc_period_s,
         ),
+        disturbance_aware_mpcc=controller(
+            "Disturbance-aware MPCC",
+            config.mpcc_period_s,
+        ),
+        path_geometry=path_geometry,
     )
 
 
 def _synthetic_benchmark() -> dict[str, object]:
     """A schema-shaped benchmark record with synthetic machine numbers."""
     return {
-        "benchmark_id": "benchmark_v2",
+        "benchmark_id": BENCHMARK_ID,
         "workloads": {
             "kernel": {
                 "name": "cpp_rk4_propagation",
@@ -149,6 +162,7 @@ def _synthetic_benchmark() -> dict[str, object]:
                 "name": "nominal_s_curve_nmpc_60s",
                 "duration_s": 60.0,
                 "control_period_s": 0.2,
+                "control_budget_ms": 200.0,
                 "samples": 10,
                 "mean_ms": 1.0,
                 "median_ms": 0.9,
@@ -161,11 +175,25 @@ def _synthetic_benchmark() -> dict[str, object]:
                 "name": "disturbance_aware_s_curve_nmpc_60s",
                 "duration_s": 60.0,
                 "control_period_s": 0.2,
+                "control_budget_ms": 200.0,
                 "samples": 10,
                 "mean_ms": 1.1,
                 "median_ms": 1.0,
                 "p95_ms": 1.6,
                 "max_ms": 2.1,
+                "failed_solves": 0,
+                "final_status_histogram": {"Solve_Succeeded": 10},
+            },
+            "mpcc_disturbance_aware": {
+                "name": "disturbance_aware_s_curve_mpcc_60s",
+                "duration_s": 60.0,
+                "control_period_s": 0.2,
+                "control_budget_ms": 200.0,
+                "samples": 10,
+                "mean_ms": 1.2,
+                "median_ms": 1.1,
+                "p95_ms": 1.7,
+                "max_ms": 2.2,
                 "failed_solves": 0,
                 "final_status_histogram": {"Solve_Succeeded": 10},
             },
@@ -222,6 +250,12 @@ def _validator() -> jsonschema.Draft202012Validator:
 # --- write path ----------------------------------------------------------------
 
 
+def test_package_versions_match_milestone_contract():
+    project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["project"]
+    assert project["version"] == "0.5.0"
+    assert vessel_gnc.__version__ == "0.5.0"
+
+
 def test_write_writes_canonical_sorted_json(tmp_path):
     reference_dir = tmp_path / "results" / "reference"
     _write(reference_dir)
@@ -241,6 +275,13 @@ def test_write_writes_canonical_sorted_json(tmp_path):
             json.dumps(document, indent=2, sort_keys=True, allow_nan=False) + "\n"
             == text
         )
+
+
+def test_schema_uses_nullable_route_completion_s_only():
+    schema = json.loads(SCHEMA_PATH.read_text())
+    properties = schema["$defs"]["controllerMetrics"]["properties"]
+    assert properties["route_completion_s"]["type"] == ["number", "null"]
+    assert "route_completion_time_s" not in properties
 
 
 def test_write_artifacts_validate_against_schema(tmp_path):
@@ -264,9 +305,12 @@ def test_metrics_artifact_has_no_timing_keys_and_exact_key_sets(tmp_path):
         "los_pid_v1",
         "nominal_nmpc_v1",
         "disturbance_aware_nmpc_v1",
+        "disturbance_aware_mpcc_v1",
     }
     for controller in metrics["controllers"].values():
         assert set(controller) == set(CONTROLLER_METRIC_KEYS)
+        assert controller["route_completion_s"] is None
+        assert "route_completion_time_s" not in controller
     assert set(metrics["estimator"]) == set(ESTIMATOR_METRIC_KEYS)
     for key in metrics:
         assert not any(
@@ -299,9 +343,22 @@ def test_config_document_matches_default_scenario(tmp_path):
     assert config["scenario"]["seed"] == 42
     assert config["scenario"]["duration_s"] == 120.0
     assert config["scenario"]["integration_dt_s"] == 0.01
-    assert config["scenario"]["control_periods"] == {"los_s": 0.1, "nmpc_s": 0.2}
+    assert config["scenario"]["control_periods"] == {
+        "estimator_s": 0.1,
+        "los_s": 0.1,
+        "nmpc_s": 0.2,
+        "mpcc_s": 0.2,
+    }
+    path = config["scenario"]["path"]
+    assert path["interpolation"] == "piecewise_cubic_hermite_pchip"
+    assert path["parameterization"] == "cumulative_waypoint_chord_length_m"
+    assert path["parameterization_is_exact_arc_length"] is False
+    assert path["out_of_domain_progress"] == "clamped"
+    assert path["progress_domain_start_m"] == 0.0
+    assert path["total_progress_m"] > 0.0
+    assert config["scenario"]["mpcc"]["q_progress"] == 8.25
     expected_scenario = _scenario_document(
-        default_reference_config(), make_s_curve_path()
+        default_reference_config(), make_s_curve_geometry()
     )
     assert config["scenario"] == expected_scenario
 
@@ -318,6 +375,23 @@ def test_generation_is_stable_sorted_json(tmp_path):
     first_metadata.pop("generated_at_utc")
     second_metadata.pop("generated_at_utc")
     assert first_metadata == second_metadata
+
+
+def test_write_requires_v3_geometry_and_mpcc_run(tmp_path):
+    run = _synthetic_run()
+    legacy_shaped_run = ReferenceRun(
+        config=run.config,
+        path=run.path,
+        los=run.los,
+        nmpc=run.nmpc,
+        disturbance_aware_nmpc=run.disturbance_aware_nmpc,
+    )
+    with pytest.raises(ValueError, match="PathGeometry and MPCC"):
+        write_reference_json(
+            legacy_shaped_run,
+            _synthetic_benchmark(),
+            tmp_path / "results" / "reference",
+        )
 
 
 def test_write_rejects_non_finite_numbers(tmp_path):
@@ -383,7 +457,7 @@ def test_check_consistency_detects_scenario_id_violation(tmp_path):
     _write(reference_dir)
     config_path = reference_dir / "config.json"
     config = json.loads(config_path.read_text())
-    config["scenario"]["id"] = "scenario_v2_other"
+    config["scenario"]["id"] = "scenario_v3_other"
     config_path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n")
     problems = check_reference_consistency(tmp_path)
     assert any("violates reference schema" in problem for problem in problems)
@@ -508,7 +582,7 @@ def test_verify_determinism_requires_committed_metrics(tmp_path):
         verify_reference_determinism(tmp_path)
 
 
-def test_verify_determinism_accepts_1e8_nmpc_and_estimator_deviation(
+def test_verify_determinism_accepts_1e8_predictive_and_estimator_deviation(
     tmp_path, monkeypatch
 ):
     """A synthetic 1e-8 deviation passes: far inside rtol/atol = 1e-6."""
@@ -518,12 +592,13 @@ def test_verify_determinism_accepts_1e8_nmpc_and_estimator_deviation(
     import vessel_gnc.reference_artifacts as artifacts
 
     def fresh_metrics(_run):
-        # The synthetic run's metrics equal the committed document; nudge two
-        # NMPC/estimator keys by 1e-8, well inside the reproducibility
+        # The synthetic run's metrics equal the committed document; nudge all
+        # predictive-controller/estimator sections by 1e-8, well inside the
         # tolerance (rtol=1e-6, atol=1e-6).
         fresh = json.loads(metrics_path.read_text())
         fresh["controllers"]["nominal_nmpc_v1"]["cross_track_rms_m"] += 1e-8
         fresh["controllers"]["disturbance_aware_nmpc_v1"]["cross_track_rms_m"] += 1e-8
+        fresh["controllers"]["disturbance_aware_mpcc_v1"]["cross_track_rms_m"] += 1e-8
         fresh["estimator"]["position_error_rms_m"] += 1e-8
         return fresh
 
@@ -619,13 +694,18 @@ def test_update_generated_markdown_replaces_placeholder_bodies(tmp_path):
     assert "_placeholder body_" not in readme
     assert "123.0 ns/step" in readme
     assert "42 ms" in readme
-    assert "1.0 / 1.5 / 2.0" in readme
+    assert "1.0 / 0.9 / 1.5 / 2.0" in readme
+    assert "Disturbance-aware MPCC" in readme
+    assert "200 ms budget" in readme
     # Exactly one start/end pair per marker survives.
     for marker_id in ("reference-benchmark-v1", "reference-provenance-v1"):
         assert readme.count(f"<!-- generated:{marker_id}:start -->") == 1
         assert readme.count(f"<!-- generated:{marker_id}:end -->") == 1
     control = (tmp_path / "docs" / "control.md").read_text()
     assert "P95 cross-track error [m]" in control  # deterministic P95 row present
+    assert "Final path progress [m]" in control
+    assert "Route completion [s]" in control
+    assert "route_completion_time_s" not in control
     estimation = (tmp_path / "docs" / "estimation.md").read_text()
     assert "Position error RMS [m]" in estimation
     validation = (tmp_path / "docs" / "validation.md").read_text()

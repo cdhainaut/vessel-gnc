@@ -19,7 +19,7 @@ the committed artifacts on every push. ``verify_reference_determinism`` is
 the only entry point that performs a fresh reference run, and it writes
 nothing. Its comparison follows the reproducibility contract: the LOS
 baseline metrics must reproduce exactly (no iterative solver), while the
-NMPC and estimator metrics must match within ``rtol=1e-6, atol=1e-6``
+NMPC, MPCC and estimator metrics must match within ``rtol=1e-6, atol=1e-6``
 because IPOPT (``tol=1e-4``) can legitimately differ in the last ulps
 between runs; a violation is reported with the worst offending key and its
 deviation (docs/control.md §5).
@@ -59,7 +59,8 @@ from pathlib import Path
 import numpy as np
 
 from vessel_gnc import _core
-from vessel_gnc.guidance import make_s_curve_path
+from vessel_gnc.mpcc import MPCC_COMPONENT_ID
+from vessel_gnc.path import PathGeometry, make_s_curve_geometry
 from vessel_gnc.reference import (
     DISTURBANCE_AWARE_NMPC_COMPONENT_ID,
     LOS_COMPONENT_ID,
@@ -80,16 +81,17 @@ __all__ = [
 ]
 
 SCHEMA_RELPATH = "results/reference/reference.schema.json"
-SCHEMA_VERSION = 2
-SCENARIO_ID = "scenario_v2_disturbance_aware"
+SCHEMA_VERSION = 3
+SCENARIO_ID = "scenario_v3_mpcc"
+BENCHMARK_ID = "benchmark_v3"
 
 # Reproducibility contract of ``verify_reference_determinism``: the LOS
-# baseline has no iterative solver and must reproduce exactly, while the
-# NMPC solves with IPOPT at ``tol=1e-4`` (docs/control.md §5), whose
+# baseline has no iterative solver and must reproduce exactly, while NMPC and
+# MPCC solve with IPOPT at ``tol=1e-4`` (docs/control.md §5), whose
 # full-precision iterates may legitimately differ in the last ulps between
-# runs. The NMPC and estimator metrics are therefore compared with these
-# relative/absolute tolerances, and the worst offending key/deviation is
-# reported on failure.
+# runs. Predictive-controller and estimator metrics are therefore compared
+# with these relative/absolute tolerances, and the worst offending
+# key/deviation is reported on failure.
 DETERMINISM_RTOL = 1e-6
 DETERMINISM_ATOL = 1e-6
 
@@ -111,13 +113,16 @@ SOURCE_GLOBS = (
     "python/vessel_gnc/*.py",
     "tools/generate_reference_results.py",
     "benchmarks/benchmark_simulation.py",
+    "results/reference/reference.schema.json",
+    "pyproject.toml",
 )
 
 _SCENARIO_DESCRIPTION = (
-    "Flagship reference scenario: S-curve path (s_curve_v1) with LOS, nominal "
-    "NMPC and disturbance-aware NMPC. All run on EKF state estimates under a "
-    "rotating current, gusts and a perturbed truth plant; the aware predictor "
-    "holds the EKF equivalent-current estimate constant over its horizon."
+    "Flagship reference scenario: one smooth S-curve geometry with LOS, nominal "
+    "NMPC, disturbance-aware NMPC and disturbance-aware geometric MPCC. All "
+    "run on matched EKF estimates under a rotating current, gusts and a "
+    "perturbed truth plant; aware predictors hold the EKF equivalent-current "
+    "estimate constant over their horizon."
 )
 _TIMING_TOKENS = ("solve", "wall", "elapsed", "_ms", "time_")
 
@@ -144,6 +149,10 @@ _COMPARISON_ROWS = (
     ("Max cross-track error [m]", "cross_track_max_m", ".2f", False),
     ("RMS wrapped heading error [deg]", "heading_error_rms_rad", ".1f", True),
     ("Max wrapped heading error [deg]", "heading_error_max_rad", ".1f", True),
+    ("Final path progress [m]", "path_progress_final_m", ".1f", False),
+    ("Final path progress fraction [-]", "path_progress_fraction", ".3f", False),
+    ("Mean progress rate [m/s]", "mean_progress_rate_m_s", ".2f", False),
+    ("Route completion [s]", "route_completion_s", ".1f", False),
     ("RMS applied thrust [N]", "thrust_rms_N", ".1f", False),
     ("Max applied thrust [N]", "thrust_max_N", ".1f", False),
     ("RMS applied yaw moment [N m]", "moment_rms_Nm", ".1f", False),
@@ -191,9 +200,13 @@ def write_reference_json(
     reference_dir = Path(reference_dir)
     repo_root = _repo_root_from(reference_dir)
     reference_dir.mkdir(parents=True, exist_ok=True)
+    if run.path_geometry is None or run.disturbance_aware_mpcc is None:
+        raise ValueError(
+            "schema v3 reference runs require a PathGeometry and MPCC controller run"
+        )
     _write_json(
         reference_dir / "config.json",
-        _config_document(repo_root, run.config, run.path),
+        _config_document(repo_root, run.config, run.path_geometry),
     )
     _write_json(reference_dir / "metrics.json", _metrics_document(run))
     _write_json(
@@ -256,12 +269,16 @@ def render_reference_assets(run: ReferenceRun, repo_root: Path) -> list[Path]:
 
 
 def _render_hero(run: ReferenceRun, output_path: Path) -> None:
-    """The aware-NMPC hero animation with reference and prediction horizons.
+    """The four-controller hero animation with reference and horizons.
 
     Reuses the shared animation helper: the scene shows the truth-plant
-    trajectory, the reference path, the recorded NMPC predictions and the
-    true (sampled) versus EKF-estimated current arrows, at the render
-    settings recorded in ``run.config``.
+    trajectories of all four controllers (LOS baseline, nominal NMPC,
+    disturbance-aware NMPC and geometric MPCC), the recorded NMPC and MPCC
+    prediction horizons, a compact path-progress overlay and the true
+    (sampled) versus EKF-estimated current arrows, at the render settings
+    recorded in ``run.config``. The animated vessel is the
+    disturbance-aware NMPC run (the legacy hero); the other three
+    trajectories are drawn as static comparison lines.
     """
     from vessel_gnc.visualization import animate_trajectory
 
@@ -279,12 +296,64 @@ def _render_hero(run: ReferenceRun, output_path: Path) -> None:
             current_east=float(current_est[idx, 1]),
         )
 
+    extra_trajectories = [
+        ("LOS baseline", np.column_stack([run.los.result.x, run.los.result.y]), "0.6"),
+        (
+            "nominal NMPC",
+            np.column_stack([run.nmpc.result.x, run.nmpc.result.y]),
+            "tab:blue",
+        ),
+        (
+            "disturbance-aware NMPC",
+            np.column_stack(
+                [
+                    run.disturbance_aware_nmpc.result.x,
+                    run.disturbance_aware_nmpc.result.y,
+                ]
+            ),
+            "tab:green",
+        ),
+    ]
+    extra_horizon = None
+    extra_horizon_label = ""
+    if run.disturbance_aware_mpcc is not None:
+        extra_trajectories.append(
+            (
+                "geometric MPCC",
+                np.column_stack(
+                    [
+                        run.disturbance_aware_mpcc.result.x,
+                        run.disturbance_aware_mpcc.result.y,
+                    ]
+                ),
+                "tab:purple",
+            )
+        )
+        extra_horizon = run.disturbance_aware_mpcc.horizon
+        extra_horizon_label = (
+            "geometric MPCC prediction "
+            f"({config.mpcc.horizon * config.mpcc.dt:.0f} s horizon)"
+        )
+
+    def progress_text(t: float, x: float, y: float) -> str | None:
+        """Compact deterministic path-progress line for the overlay."""
+        if run.path_geometry is None:
+            return None
+        (progress,) = run.path_geometry.project(np.array([[x, y]])).progress
+        return (
+            f"path progress {progress:5.1f} m "
+            f"({100.0 * progress / run.path_geometry.length:3.1f}%)"
+        )
+
     animate_trajectory(
         controller.result,
         output_path=output_path,
         environment=config.environment.sample,
         estimated_environment=estimated_environment,
-        title="Disturbance-aware NMPC — predicted horizon",
+        title=(
+            "Four controllers on the smooth S-curve — "
+            "disturbance-aware NMPC with prediction horizons"
+        ),
         stride=config.render_hero_stride_frames,
         fps=config.render_fps,
         wake_duration=config.render_hero_wake_duration_s,
@@ -294,6 +363,10 @@ def _render_hero(run: ReferenceRun, output_path: Path) -> None:
             "disturbance-aware prediction "
             f"({config.nmpc.horizon * config.nmpc.dt:.0f} s horizon)"
         ),
+        extra_trajectories=extra_trajectories,
+        extra_horizon=extra_horizon,
+        extra_horizon_label=extra_horizon_label,
+        progress_text=progress_text,
     )
 
 
@@ -409,7 +482,9 @@ def check_reference_consistency(repo_root: Path) -> list[str]:
     config_document = documents.get("config.json")
     if config_document is not None:
         expected = _config_document(
-            repo_root, default_reference_config(), make_s_curve_path()
+            repo_root,
+            default_reference_config(),
+            make_s_curve_geometry(),
         )
         # git_commit is generation-time provenance, not a property of the
         # current checkout: it must not fail the check after the source is
@@ -457,12 +532,13 @@ def verify_reference_determinism(repo_root: Path) -> None:
     when the fresh deterministic metrics violate the reproducibility
     contract: the LOS baseline metrics must match
     ``results/reference/metrics.json`` exactly (no iterative solver), while
-    both NMPC variants and estimator metrics must match within ``rtol=1e-6``,
-    ``atol=1e-6`` — IPOPT solves to ``tol=1e-4`` (docs/control.md §5) and
-    its full-precision iterates may legitimately differ in the last ulps
-    between runs. On failure the message reports the worst offending key
-    and its absolute/relative deviation. This is the explicit determinism
-    validation command and must not be part of normal pytest.
+    both NMPC variants, MPCC and estimator metrics must match within
+    ``rtol=1e-6``, ``atol=1e-6`` — IPOPT solves to ``tol=1e-4``
+    (docs/control.md §5) and its full-precision iterates may legitimately
+    differ in the last ulps between runs. On failure the message reports the
+    worst offending key and its absolute/relative deviation. This is the
+    explicit determinism validation command and must not be part of normal
+    pytest.
 
     Args:
         repo_root: repository root containing ``results/reference/``.
@@ -505,6 +581,11 @@ def verify_reference_determinism(repo_root: Path) -> None:
             f"controllers.{DISTURBANCE_AWARE_NMPC_COMPONENT_ID}",
             committed["controllers"][DISTURBANCE_AWARE_NMPC_COMPONENT_ID],
             fresh["controllers"][DISTURBANCE_AWARE_NMPC_COMPONENT_ID],
+        ),
+        (
+            f"controllers.{MPCC_COMPONENT_ID}",
+            committed["controllers"][MPCC_COMPONENT_ID],
+            fresh["controllers"][MPCC_COMPONENT_ID],
         ),
         ("estimator", committed["estimator"], fresh["estimator"]),
     ):
@@ -613,6 +694,7 @@ def _marker_bodies(repo_root: Path) -> dict[str, str]:
             controllers[LOS_COMPONENT_ID],
             controllers[NMPC_COMPONENT_ID],
             controllers[DISTURBANCE_AWARE_NMPC_COMPONENT_ID],
+            controllers[MPCC_COMPONENT_ID],
         ),
         "reference-estimator-v1": _estimator_body(scenario, metrics["estimator"]),
         "reference-provenance-v1": _provenance_body(
@@ -625,11 +707,29 @@ def _benchmark_body(benchmark: dict, workloads: dict) -> str:
     """The machine-dependent benchmark table (README/validation)."""
     kernel = workloads["kernel"]
     simulation = workloads["simulation"]
-    nominal = workloads["nmpc_nominal"]
-    aware = workloads["nmpc_disturbance_aware"]
-    budget_ms = 1000.0 * nominal["control_period_s"]
-    sample_count = nominal["samples"] + aware["samples"]
-    failed_count = nominal["failed_solves"] + aware["failed_solves"]
+    controllers = (
+        ("Nominal NMPC", workloads["nmpc_nominal"]),
+        ("Disturbance-aware NMPC", workloads["nmpc_disturbance_aware"]),
+        ("Disturbance-aware MPCC", workloads["mpcc_disturbance_aware"]),
+    )
+    sample_count = sum(workload["samples"] for _, workload in controllers)
+    failed_count = sum(workload["failed_solves"] for _, workload in controllers)
+    budget_ms = controllers[0][1]["control_budget_ms"]
+    controller_rows = "".join(
+        f"| {label} mean / median / p95 / max [ms] | "
+        f"**{workload['mean_ms']:.1f} / {workload['median_ms']:.1f} / "
+        f"{workload['p95_ms']:.1f} / {workload['max_ms']:.1f}** |\n"
+        for label, workload in controllers
+    )
+    status_summary = "; ".join(
+        f"{label}: {workload['samples']} samples, "
+        f"{workload['failed_solves']} failed, "
+        + ", ".join(
+            f"{status}={count}"
+            for status, count in workload["final_status_histogram"].items()
+        )
+        for label, workload in controllers
+    )
     return (
         "\n"
         "| Metric | Result |\n"
@@ -638,19 +738,15 @@ def _benchmark_body(benchmark: dict, workloads: dict) -> str:
         f"**{kernel['ns_per_step']:.1f} ns/step** |\n"
         f"| 1000 s simulation (Python loop) | "
         f"**{simulation['wall_time_ms']:.0f} ms** |\n"
-        f"| Nominal NMPC mean / p95 / max [ms] | "
-        f"**{nominal['mean_ms']:.1f} / {nominal['p95_ms']:.1f} / "
-        f"{nominal['max_ms']:.1f}** |\n"
-        f"| Disturbance-aware NMPC mean / p95 / max [ms] | "
-        f"**{aware['mean_ms']:.1f} / {aware['p95_ms']:.1f} / "
-        f"{aware['max_ms']:.1f}** |\n"
+        f"{controller_rows}"
         "\n"
         f"Machine-dependent wall-clock measurements recorded in "
         f"`results/reference/benchmark.json` (`{benchmark['benchmark_id']}`, "
-        f"{sample_count} samples, {failed_count} failed solves). "
-        f"The 5 Hz NMPC control period corresponds to a {budget_ms:.0f} ms "
-        f"budget; these solve times make no real-time capability claim. "
-        f"Regenerate with `python tools/generate_reference_results.py`.\n"
+        f"{sample_count} predictive solves, {failed_count} failed). "
+        f"Per-workload status histograms: {status_summary}. The 5 Hz control "
+        f"period defines a {budget_ms:.0f} ms budget; these solve times make "
+        f"no real-time capability claim. Regenerate with "
+        f"`python tools/generate_reference_results.py`.\n"
         "\n"
     )
 
@@ -660,17 +756,19 @@ def _comparison_body(
     los: dict,
     nominal: dict,
     disturbance_aware: dict,
+    mpcc: dict,
 ) -> str:
-    """The deterministic LOS/nominal/aware controller table."""
+    """The deterministic four-controller comparison table."""
     lines = [
-        "| Metric | LOS (PID/PI) | Nominal NMPC | Aware NMPC |",
-        "|---|---:|---:|---:|",
+        "| Metric | LOS (PID/PI) | Nominal NMPC | Aware NMPC | Aware MPCC |",
+        "|---|---:|---:|---:|---:|",
     ]
     for label, key, spec, degrees in _COMPARISON_ROWS:
         lines.append(
             f"| {label} | {_fmt(los[key], spec, degrees)} | "
             f"{_fmt(nominal[key], spec, degrees)} | "
-            f"{_fmt(disturbance_aware[key], spec, degrees)} |"
+            f"{_fmt(disturbance_aware[key], spec, degrees)} | "
+            f"{_fmt(mpcc[key], spec, degrees)} |"
         )
     return (
         "\n"
@@ -680,11 +778,13 @@ def _comparison_body(
         "`results/reference/metrics.json` "
         f"(scenario `{SCENARIO_ID}`, revision {scenario['revision']}, "
         f"seed {scenario['seed']}, {scenario['duration_s']:.1f} s at "
-        f"{scenario['integration_dt_s']:.2f} s integration). Saturation counts "
-        "left-closed intervals whose applied value lies within 1% of a "
-        "`ModelParams` bound span (docs/validation.md). No wall-clock timing "
-        "appears here: NMPC solve times are machine-dependent and reported "
-        "separately in the benchmark table.\n"
+        f"{scenario['integration_dt_s']:.2f} s integration). Route completion "
+        "is the first sample at 99% of total chord progress; an incomplete "
+        "route is shown as —. Saturation counts left-closed intervals whose "
+        "applied value lies within 1% of a `ModelParams` bound span "
+        "(docs/validation.md). No wall-clock timing appears here: predictive "
+        "solve times are machine-dependent and reported separately in the "
+        "benchmark table.\n"
         "\n"
     )
 
@@ -734,7 +834,8 @@ def _provenance_body(
         f"{scenario['integration_dt_s']:.2f} s |\n"
         f"| Controllers | `{components['controller_los']}` · "
         f"`{components['controller_nmpc']}` · "
-        f"`{components['controller_disturbance_aware_nmpc']}` |\n"
+        f"`{components['controller_disturbance_aware_nmpc']}` · "
+        f"`{components['controller_disturbance_aware_mpcc']}` |\n"
         f"| Estimator | `{components['estimator']}` |\n"
         "| Schema | `results/reference/reference.schema.json` "
         f"(version {config['schema_version']}) |\n"
@@ -756,7 +857,7 @@ def _provenance_body(
         "artifact hashes and marker bodies without any simulation; "
         "`--verify-determinism` runs one fresh 120 s reference and compares "
         "it with `results/reference/metrics.json`: the LOS baseline metrics "
-        "exactly, and both NMPC variants plus estimator metrics within "
+        "exactly, and both NMPC variants, MPCC plus estimator metrics within "
         "`rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its "
         "full-precision iterates may differ in the last ulps), reporting "
         "the worst offending key and deviation on failure. Reproducibility "
@@ -770,6 +871,8 @@ def _provenance_body(
 
 def _fmt(value: object, spec: str, degrees: bool = False) -> str:
     """Format a JSON number, optionally converted to degrees, for a cell."""
+    if value is None:
+        return "—"
     number = float(value)
     if degrees:
         number = math.degrees(number)
@@ -817,7 +920,7 @@ def _marker_body_problems(repo_root: Path) -> list[str]:
 def _config_document(
     repo_root: Path,
     config: ReferenceScenarioConfig,
-    path: np.ndarray,
+    path: PathGeometry,
 ) -> dict[str, object]:
     """The versioned config.json document for a scenario and its path."""
     return {
@@ -830,7 +933,8 @@ def _config_document(
 
 
 def _scenario_document(
-    config: ReferenceScenarioConfig, path: np.ndarray
+    config: ReferenceScenarioConfig,
+    path: PathGeometry,
 ) -> dict[str, object]:
     """The scenario record with parameter values, not digests.
 
@@ -844,11 +948,12 @@ def _scenario_document(
     return {
         "id": SCENARIO_ID,
         "components": {
-            "path": "s_curve_v1",
+            "path": "smooth_s_curve_v1",
             "environment": "rotating_current_gusts_v1",
             "controller_los": LOS_COMPONENT_ID,
             "controller_nmpc": NMPC_COMPONENT_ID,
             "controller_disturbance_aware_nmpc": (DISTURBANCE_AWARE_NMPC_COMPONENT_ID),
+            "controller_disturbance_aware_mpcc": MPCC_COMPONENT_ID,
             "estimator": "augmented_current_ekf_v1",
         },
         "description": _SCENARIO_DESCRIPTION,
@@ -857,14 +962,25 @@ def _scenario_document(
         "duration_s": config.duration_s,
         "integration_dt_s": config.integration_dt_s,
         "control_periods": {
+            "estimator_s": config.estimator_period_s,
             "los_s": config.los_period_s,
             "nmpc_s": config.nmpc_period_s,
+            "mpcc_s": config.mpcc_period_s,
         },
         "path": {
-            "name": "s_curve",
+            "name": "smooth_s_curve",
+            "interpolation": "piecewise_cubic_hermite_pchip",
+            "parameterization": "cumulative_waypoint_chord_length_m",
+            "parameterization_is_exact_arc_length": False,
+            "out_of_domain_progress": "clamped",
+            "projection": "global_closest_point_earliest_progress_tie_break",
+            "progress_domain_start_m": 0.0,
+            "total_progress_m": path.length,
             "speed_ref_m_s": config.speed_ref_m_s,
             "lookahead_m": config.lookahead_m,
-            "waypoints": [[float(x), float(y)] for x, y in path],
+            "waypoints": [
+                [float(north), float(east)] for north, east in path.waypoints
+            ],
         },
         "environment": {
             "current_base_east_m_s": env.current_base_east,
@@ -898,6 +1014,24 @@ def _scenario_document(
             "s_moment": nmpc.s_moment,
             "warm_start": nmpc.warm_start,
         },
+        "mpcc": {
+            "horizon": config.mpcc.horizon,
+            "dt_s": config.mpcc.dt,
+            "substeps": config.mpcc.substeps,
+            "q_contour": config.mpcc.q_contour,
+            "q_lag": config.mpcc.q_lag,
+            "q_heading": config.mpcc.q_heading,
+            "q_progress": config.mpcc.q_progress,
+            "r_thrust": config.mpcc.r_thrust,
+            "r_moment": config.mpcc.r_moment,
+            "s_thrust": config.mpcc.s_thrust,
+            "s_moment": config.mpcc.s_moment,
+            "r_vs": config.mpcc.r_vs,
+            "s_vs": config.mpcc.s_vs,
+            "progress_speed_ref_m_s": config.mpcc.progress_speed_ref,
+            "progress_speed_max_m_s": config.mpcc.progress_speed_max,
+            "warm_start": config.mpcc.warm_start,
+        },
         "los": {
             "heading_gains": _pid_gains(config.los_heading_gains),
             "speed_gains": _pid_gains(config.los_speed_gains),
@@ -912,6 +1046,7 @@ def _scenario_document(
             "hero_stride_frames": config.render_hero_stride_frames,
             "hero_wake_duration_s": config.render_hero_wake_duration_s,
             "horizon_shot_times_s": list(HORIZON_SHOT_TIMES_S),
+            "path_render_samples": config.path_render_samples,
         },
     }
 
@@ -933,9 +1068,9 @@ def _benchmark_document(
     benchmark: dict[str, object], repo_root: Path
 ) -> dict[str, object]:
     """The benchmark.json artifact: machine-dependent timing only."""
-    if "benchmark_id" not in benchmark or "workloads" not in benchmark:
+    if benchmark.get("benchmark_id") != BENCHMARK_ID or "workloads" not in benchmark:
         raise ValueError(
-            "benchmark must contain 'benchmark_id' and 'workloads' "
+            f"benchmark must contain benchmark_id={BENCHMARK_ID!r} and 'workloads' "
             "(see benchmarks/benchmark_simulation.py run_benchmarks)"
         )
     return {

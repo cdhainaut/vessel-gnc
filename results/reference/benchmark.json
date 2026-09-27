@@ -1,47 +1,64 @@
 {
   "$schema": "results/reference/reference.schema.json",
   "artifact_type": "benchmark",
-  "benchmark_id": "benchmark_v2",
-  "git_commit": "53e0958039310f59f44ec2b7be4a840dd0e882d2",
-  "schema_version": 2,
+  "benchmark_id": "benchmark_v3",
+  "git_commit": "5796fdcfa726f4359d0b4e43e9d03ecfe54c3e61",
+  "schema_version": 3,
   "workloads": {
     "kernel": {
       "name": "cpp_rk4_propagation",
-      "ns_per_step": 578.2079150003483,
+      "ns_per_step": 493.7483750001092,
       "steps": 200000
     },
-    "nmpc_disturbance_aware": {
+    "mpcc_disturbance_aware": {
+      "control_budget_ms": 200.0,
       "control_period_s": 0.2,
       "duration_s": 60.0,
       "failed_solves": 0,
       "final_status_histogram": {
         "Solve_Succeeded": 300
       },
-      "max_ms": 40.78077099984512,
-      "mean_ms": 22.477475570012757,
-      "median_ms": 21.6984290000255,
+      "max_ms": 70.43779100001757,
+      "mean_ms": 27.471323159998065,
+      "median_ms": 26.247952000005625,
+      "name": "disturbance_aware_s_curve_mpcc_60s",
+      "p95_ms": 33.35122185000046,
+      "samples": 300
+    },
+    "nmpc_disturbance_aware": {
+      "control_budget_ms": 200.0,
+      "control_period_s": 0.2,
+      "duration_s": 60.0,
+      "failed_solves": 0,
+      "final_status_histogram": {
+        "Solve_Succeeded": 300
+      },
+      "max_ms": 27.23706699998729,
+      "mean_ms": 16.720134886661146,
+      "median_ms": 15.591214500034312,
       "name": "disturbance_aware_s_curve_nmpc_60s",
-      "p95_ms": 31.021027450105976,
+      "p95_ms": 21.97521595001035,
       "samples": 300
     },
     "nmpc_nominal": {
+      "control_budget_ms": 200.0,
       "control_period_s": 0.2,
       "duration_s": 60.0,
       "failed_solves": 0,
       "final_status_histogram": {
         "Solve_Succeeded": 300
       },
-      "max_ms": 76.98001500011742,
-      "mean_ms": 23.87082635336507,
-      "median_ms": 21.86052649994963,
+      "max_ms": 33.76653299994814,
+      "mean_ms": 20.05433661000211,
+      "median_ms": 19.31855100002622,
       "name": "nominal_s_curve_nmpc_60s",
-      "p95_ms": 33.87002344957182,
+      "p95_ms": 26.915554199985092,
       "samples": 300
     },
     "simulation": {
       "duration_s": 1000.0,
       "name": "python_orchestration_1000s",
-      "wall_time_ms": 452.88774199980253
+      "wall_time_ms": 346.437485000024
     }
   }
 }

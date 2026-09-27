@@ -67,6 +67,10 @@ CONTROLLER_METRIC_KEYS = (
     "cross_track_max_m",
     "heading_error_rms_rad",
     "heading_error_max_rad",
+    "path_progress_final_m",
+    "path_progress_fraction",
+    "mean_progress_rate_m_s",
+    "route_completion_s",
     "thrust_rms_N",
     "thrust_max_N",
     "moment_rms_Nm",
@@ -171,7 +175,7 @@ def test_committed_artifacts_are_canonical_json():
 
 
 def test_artifact_types_and_schema_versions_match():
-    assert SCHEMA_VERSION == 2
+    assert SCHEMA_VERSION == 3
     for name in ARTIFACT_NAMES:
         document = _load(name)
         assert document["artifact_type"] == EXPECTED_ARTIFACT_TYPES[name]
@@ -186,15 +190,26 @@ def test_config_documents_canonical_scenario():
     assert scenario["seed"] == 42
     assert scenario["duration_s"] == 120.0
     assert scenario["integration_dt_s"] == 0.01
-    assert scenario["control_periods"] == {"los_s": 0.1, "nmpc_s": 0.2}
+    assert scenario["control_periods"] == {
+        "estimator_s": 0.1,
+        "los_s": 0.1,
+        "nmpc_s": 0.2,
+        "mpcc_s": 0.2,
+    }
     assert scenario["path"]["speed_ref_m_s"] == 1.3
     assert scenario["path"]["lookahead_m"] == 8.0
+    assert scenario["path"]["interpolation"] == "piecewise_cubic_hermite_pchip"
+    assert scenario["path"]["parameterization"] == "cumulative_waypoint_chord_length_m"
+    assert scenario["path"]["parameterization_is_exact_arc_length"] is False
+    assert scenario["path"]["total_progress_m"] > 0.0
+    assert scenario["mpcc"]["q_progress"] == 8.25
     assert scenario["components"] == {
-        "path": "s_curve_v1",
+        "path": "smooth_s_curve_v1",
         "environment": "rotating_current_gusts_v1",
         "controller_los": "los_pid_v1",
         "controller_nmpc": "nominal_nmpc_v1",
         "controller_disturbance_aware_nmpc": "disturbance_aware_nmpc_v1",
+        "controller_disturbance_aware_mpcc": "disturbance_aware_mpcc_v1",
         "estimator": "augmented_current_ekf_v1",
     }
     # The committed scenario must match the current code defaults exactly.
@@ -203,8 +218,10 @@ def test_config_documents_canonical_scenario():
     assert scenario["duration_s"] == current.duration_s
     assert scenario["integration_dt_s"] == current.integration_dt_s
     assert scenario["control_periods"] == {
+        "estimator_s": current.estimator_period_s,
         "los_s": current.los_period_s,
         "nmpc_s": current.nmpc_period_s,
+        "mpcc_s": current.mpcc_period_s,
     }
 
 
@@ -221,11 +238,15 @@ def test_metrics_are_finite_deterministic_and_timing_free():
         "los_pid_v1",
         "nominal_nmpc_v1",
         "disturbance_aware_nmpc_v1",
+        "disturbance_aware_mpcc_v1",
     }
     for controller_metrics in metrics["controllers"].values():
         assert set(controller_metrics) == set(CONTROLLER_METRIC_KEYS)
-        for value in controller_metrics.values():
-            assert value >= 0.0  # RMS/P95/max/saturation durations are non-negative
+        for key, value in controller_metrics.items():
+            if key == "route_completion_s" and value is None:
+                continue
+            assert value >= 0.0
+        assert "route_completion_time_s" not in controller_metrics
     assert set(metrics["estimator"]) == set(ESTIMATOR_METRIC_KEYS)
     assert metrics["estimator"]["current_error_transient_s"] == 20.0
 
@@ -238,12 +259,14 @@ def test_benchmark_has_required_statistics_without_timing_assertions():
     # themselves (they are machine-dependent and must not be part of
     # deterministic checks).
     benchmark = _load("benchmark.json")
+    assert benchmark["benchmark_id"] == "benchmark_v3"
     workloads = benchmark["workloads"]
     assert set(workloads) == {
         "kernel",
         "simulation",
         "nmpc_nominal",
         "nmpc_disturbance_aware",
+        "mpcc_disturbance_aware",
     }
 
     kernel = workloads["kernel"]
@@ -259,12 +282,14 @@ def test_benchmark_has_required_statistics_without_timing_assertions():
     expected_names = {
         "nmpc_nominal": "nominal_s_curve_nmpc_60s",
         "nmpc_disturbance_aware": "disturbance_aware_s_curve_nmpc_60s",
+        "mpcc_disturbance_aware": "disturbance_aware_s_curve_mpcc_60s",
     }
     for workload_key, expected_name in expected_names.items():
         nmpc = workloads[workload_key]
         assert nmpc["name"] == expected_name
         assert nmpc["duration_s"] == 60.0
         assert nmpc["control_period_s"] == 0.2
+        assert nmpc["control_budget_ms"] == 200.0
         assert isinstance(nmpc["samples"], int) and nmpc["samples"] > 0
         for key in ("mean_ms", "median_ms", "p95_ms", "max_ms"):
             assert nmpc[key] > 0.0, f"{workload_key}.{key} must be positive"
@@ -307,6 +332,11 @@ def test_metadata_source_fingerprint_matches_current_tree():
     assert isinstance(fingerprint["dirty"], bool)
     assert re.fullmatch(r"[0-9a-f]{64}", fingerprint["sha256"])
     assert "python/vessel_gnc/reference.py" in fingerprint["files"]
+    assert "python/vessel_gnc/path.py" in fingerprint["files"]
+    assert "python/vessel_gnc/prediction.py" in fingerprint["files"]
+    assert "python/vessel_gnc/mpcc.py" in fingerprint["files"]
+    assert "results/reference/reference.schema.json" in fingerprint["files"]
+    assert "pyproject.toml" in fingerprint["files"]
     assert "tools/generate_reference_results.py" in fingerprint["files"]
 
 
@@ -395,6 +425,10 @@ def test_normal_pytest_cannot_launch_the_flagship():
         (
             re.compile(r"verify_reference_determinism\s*\(\s*REPO_ROOT\s*\)"),
             "determinism verification on the repository root",
+        ),
+        (
+            re.compile(r"(?<!def )run_benchmarks\s*\(\s*\)"),
+            "the aggregate benchmark workload",
         ),
     )
     for path in sorted((REPO_ROOT / "tests").glob("test_*.py")):

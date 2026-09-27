@@ -8,7 +8,12 @@ from __future__ import annotations
 import numpy as np
 
 from vessel_gnc import _core
-from vessel_gnc.guidance import los_heading, project_onto_path
+from vessel_gnc.guidance import (
+    los_heading,
+    path_arc_lengths,
+    project_onto_path,
+)
+from vessel_gnc.path import PathGeometry
 from vessel_gnc.simulation import SimulationResult
 
 __all__ = ["path_following_metrics"]
@@ -16,18 +21,26 @@ __all__ = ["path_following_metrics"]
 
 def path_following_metrics(
     result: SimulationResult,
-    path: np.ndarray,
+    path: np.ndarray | PathGeometry,
     lookahead: float,
     *,
     params: _core.ModelParams | None = None,
     saturation_threshold: float = 0.99,
-) -> dict[str, float]:
+    route_completion_fraction: float = 0.99,
+) -> dict[str, float | None]:
     """Path-following metrics over the whole run (SI units, angles in rad).
 
     Cross-track statistics use the absolute signed cross-track error
     (positive = left of the path direction, see guidance.project_onto_path).
     Heading errors are wrapped to (-pi, pi]. Actuator effort uses the applied
-    (post-actuator) histories, not the raw commands.
+    (post-actuator) histories, not the raw commands. Progress is the geometric
+    projection coordinate [m]. ``path_progress_final_m`` is the final sample's
+    projected progress, ``path_progress_fraction`` divides it by the complete
+    path length, and ``mean_progress_rate_m_s`` is the final-minus-initial
+    progress divided by elapsed simulation time. Route completion is the first
+    sample whose projection reaches ``route_completion_fraction`` (default
+    99 %) of the path length; ``route_completion_s`` is ``None`` if no sample
+    reaches it.
 
     Saturation duration: for each left-closed simulation interval
     ``[t_k, t_{k+1})`` a channel is saturated when its applied actuator value
@@ -41,16 +54,18 @@ def path_following_metrics(
 
     Args:
         result: simulation history (state and applied actuator values).
-        path: (M, 2) reference waypoints [m].
+        path: smooth path geometry or legacy (M, 2) polyline [m].
         lookahead: LOS lookahead distance [m].
         params: model parameters providing the physical actuator bounds
             (default: ``_core.default_params()``).
         saturation_threshold: fraction of the full bound span required for a
             channel to count as saturated (0.99 = within 1 % of a bound).
+        route_completion_fraction: path-progress fraction defining route
+            completion; defaults to 0.99 (99 %).
 
     Returns:
         A JSON-serializable dict with cross-track error, LOS heading error,
-        actuator effort and saturation-duration statistics.
+        progress/completion, actuator effort and saturation-duration statistics.
 
     Example:
         >>> import json
@@ -64,11 +79,23 @@ def path_following_metrics(
     params = params if params is not None else _core.default_params()
     if not 0.5 <= saturation_threshold <= 1.0:
         raise ValueError("saturation_threshold must be in [0.5, 1.0]")
+    if not 0.0 < route_completion_fraction <= 1.0:
+        raise ValueError("route_completion_fraction must be in (0, 1]")
 
     points = np.column_stack([result.x, result.y])
-    _, _, cross = project_onto_path(points, path)
+    if isinstance(path, PathGeometry):
+        projection = path.project(points)
+        progress = projection.progress
+        cross = projection.cross_track
+        psi_los = path.los_heading(points, lookahead)
+        path_length = path.length
+    else:
+        segment, along_track, cross = project_onto_path(points, path)
+        cumulative_length = path_arc_lengths(path)
+        progress = cumulative_length[segment] + along_track
+        psi_los = los_heading(points, path, lookahead)
+        path_length = float(cumulative_length[-1])
     cross_abs = np.abs(cross)
-    psi_los = los_heading(points, path, lookahead)
     heading_error = np.arctan2(
         np.sin(psi_los - result.psi), np.cos(psi_los - result.psi)
     )
@@ -87,12 +114,22 @@ def path_following_metrics(
         saturation_threshold,
     )
 
+    elapsed_s = float(result.t[-1] - result.t[0])
+    if elapsed_s <= 0.0:
+        raise ValueError("result timestamps must span a positive duration")
+    completed = np.flatnonzero(progress >= route_completion_fraction * path_length)
+    route_completion_s = float(result.t[completed[0]]) if completed.size else None
+
     return {
         "cross_track_rms_m": float(np.sqrt(np.mean(cross**2))),
         "cross_track_p95_m": float(np.percentile(cross_abs, 95)),
         "cross_track_max_m": float(np.max(cross_abs)),
         "heading_error_rms_rad": float(np.sqrt(np.mean(heading_error**2))),
         "heading_error_max_rad": float(np.max(np.abs(heading_error))),
+        "path_progress_final_m": float(progress[-1]),
+        "path_progress_fraction": float(progress[-1] / path_length),
+        "mean_progress_rate_m_s": float((progress[-1] - progress[0]) / elapsed_s),
+        "route_completion_s": route_completion_s,
         "thrust_rms_N": float(np.sqrt(np.mean(result.thrust**2))),
         "thrust_max_N": float(np.max(np.abs(result.thrust))),
         "moment_rms_Nm": float(np.sqrt(np.mean(result.yaw_moment**2))),

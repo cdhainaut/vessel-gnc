@@ -1,4 +1,4 @@
-"""Flagship: LOS vs nominal and disturbance-aware NMPC with EKF.
+"""Flagship comparison: LOS, two time-NMPC variants and geometric MPCC.
 
 Run from the repository root:
 
@@ -43,6 +43,8 @@ _METRIC_ROWS = (
     "cross_track_rms_m",
     "cross_track_max_m",
     "heading_error_rms_rad",
+    "path_progress_fraction",
+    "mean_progress_rate_m_s",
     "thrust_rms_N",
     "moment_rms_Nm",
 )
@@ -54,11 +56,13 @@ def main() -> None:
     los_metrics = metrics["controllers"]["los_pid_v1"]
     nmpc_metrics = metrics["controllers"]["nominal_nmpc_v1"]
     aware_metrics = metrics["controllers"]["disturbance_aware_nmpc_v1"]
+    mpcc_metrics = metrics["controllers"]["disturbance_aware_mpcc_v1"]
 
     for label, controller_metrics in (
         (run.los.label, los_metrics),
         (run.nmpc.label, nmpc_metrics),
         (run.disturbance_aware_nmpc.label, aware_metrics),
+        (run.disturbance_aware_mpcc.label, mpcc_metrics),
     ):
         print(f"--- {label} ---")
         for key in _METRIC_ROWS:
@@ -71,6 +75,7 @@ def main() -> None:
                 "los": los_metrics,
                 "nominal_nmpc": nmpc_metrics,
                 "disturbance_aware_nmpc": aware_metrics,
+                "disturbance_aware_mpcc": mpcc_metrics,
             },
             indent=2,
         )

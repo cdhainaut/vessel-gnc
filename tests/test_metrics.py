@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 from vessel_gnc import _core
 from vessel_gnc.metrics import path_following_metrics
+from vessel_gnc.path import PathGeometry
 from vessel_gnc.simulation import SimulationResult
 
 PATH = np.array([[0.0, 0.0], [100.0, 0.0]])  # straight North (x = North)
@@ -52,6 +53,40 @@ def test_cross_track_p95_and_max():
     assert metrics["cross_track_p95_m"] == pytest.approx(19.0)
     assert metrics["cross_track_max_m"] == pytest.approx(20.0)
     assert metrics["cross_track_rms_m"] == pytest.approx(np.sqrt(np.mean(k**2)))
+
+
+def test_progress_rate_and_incomplete_route_semantics_for_legacy_polyline():
+    result = make_result(
+        x=np.array([20.0, 50.0, 98.0]),
+        y=np.zeros(3),
+        thrust=np.zeros(3),
+        yaw_moment=np.zeros(3),
+    )
+    metrics = path_following_metrics(result, PATH, LOOKAHEAD)
+    assert metrics["path_progress_final_m"] == pytest.approx(98.0)
+    assert metrics["path_progress_fraction"] == pytest.approx(0.98)
+    assert metrics["mean_progress_rate_m_s"] == pytest.approx(39.0)
+    assert metrics["route_completion_s"] is None
+
+
+def test_route_completion_is_first_99_percent_crossing_on_smooth_geometry():
+    # Completion remains recorded at the first threshold crossing even if the
+    # final sample subsequently projects backward below 99 %.
+    result = make_result(
+        x=np.array([0.0, 50.0, 99.0, 98.0]),
+        y=np.zeros(4),
+        thrust=np.zeros(4),
+        yaw_moment=np.zeros(4),
+    )
+    metrics = path_following_metrics(
+        result,
+        PathGeometry(PATH),
+        LOOKAHEAD,
+    )
+    assert metrics["route_completion_s"] == pytest.approx(2.0)
+    assert metrics["path_progress_final_m"] == pytest.approx(98.0)
+    assert metrics["path_progress_fraction"] == pytest.approx(0.98)
+    assert metrics["mean_progress_rate_m_s"] == pytest.approx(98.0 / 3.0)
 
 
 def test_thrust_saturation_duration_with_asymmetric_bounds():
@@ -127,6 +162,10 @@ def test_existing_keys_retained():
         "cross_track_max_m",
         "heading_error_rms_rad",
         "heading_error_max_rad",
+        "path_progress_final_m",
+        "path_progress_fraction",
+        "mean_progress_rate_m_s",
+        "route_completion_s",
         "thrust_rms_N",
         "thrust_max_N",
         "moment_rms_Nm",
@@ -158,3 +197,7 @@ def test_saturation_threshold_validation():
         path_following_metrics(result, PATH, LOOKAHEAD, saturation_threshold=0.4)
     with pytest.raises(ValueError):
         path_following_metrics(result, PATH, LOOKAHEAD, saturation_threshold=1.5)
+    with pytest.raises(ValueError):
+        path_following_metrics(result, PATH, LOOKAHEAD, route_completion_fraction=0.0)
+    with pytest.raises(ValueError):
+        path_following_metrics(result, PATH, LOOKAHEAD, route_completion_fraction=1.1)

@@ -2,26 +2,26 @@
   "$schema": "results/reference/reference.schema.json",
   "artifact_type": "metadata",
   "artifacts": {
-    "assets/controller_comparison.png": "02d618845f8ce272cabaf2343dfe039e124e25e12504d3cb8333b57a68e883db",
-    "assets/current_estimation.png": "8f3539bbb4107f1194a9795eab4f8b802f05a3239a83b1ea67294e0977fa2d79",
-    "assets/hero.gif": "f3435aa9015b4b6a899f876f420bb37ec2b2fbb5fbdb936586f2bc482b754808",
-    "results/reference/benchmark.json": "a73e14e6152afcd5a098e068e7404642a696b6be376698a843c94508ae29206c",
-    "results/reference/config.json": "ea1cc30a3220ddd8f993bfb330ee98eeefa381f6afe1cd857e647a8a25370053",
-    "results/reference/metrics.json": "8121d4a4880dc5f659e21ca116ae23d29599d3f49c9ac060438ed759e800bd8a"
+    "assets/controller_comparison.png": "286fea326cbb4a0de61fb5b9cec1ab4365e9af4c712425c63e84be06aed433ed",
+    "assets/current_estimation.png": "fd548a8fecf2f8b14cc88686c5acc62bdf42a79c723009d138f4bdce258ff18b",
+    "assets/hero.gif": "925d169d068246e23bfcf5afc800b639f64c5f873b71bc31d7aaf41ab4d89f27",
+    "results/reference/benchmark.json": "b895c5e6931007e3efcb2610738ff87a2eae2e1bbe7034125d862b8b2702350b",
+    "results/reference/config.json": "0d0b94a7b13bc3dea85f5becbeb40d8e969484b30d8fecf1632c7dc28cc680b1",
+    "results/reference/metrics.json": "7e7adef598224a27c81ab1c9134a03624451fafd309528e225fc4266ec04be89"
   },
-  "generated_at_utc": "2026-08-15T09:44:51+00:00",
+  "generated_at_utc": "2026-08-16T20:46:31+00:00",
   "platform": {
     "machine": "x86_64",
     "os": "Linux"
   },
-  "schema_version": 2,
+  "schema_version": 3,
   "software": {
     "casadi": "3.7.2",
     "matplotlib": "3.10.9",
     "numpy": "2.5.1",
     "pillow": "12.2.0",
     "python": "3.13.13",
-    "vessel_gnc": "0.4.0"
+    "vessel_gnc": "0.5.0"
   },
   "source_fingerprint": {
     "dirty": true,
@@ -32,17 +32,22 @@
       "include/vessel_gnc/dynamics.hpp",
       "include/vessel_gnc/integrator.hpp",
       "include/vessel_gnc/state.hpp",
+      "pyproject.toml",
       "python/vessel_gnc/__init__.py",
       "python/vessel_gnc/ekf.py",
       "python/vessel_gnc/environment.py",
       "python/vessel_gnc/guidance.py",
       "python/vessel_gnc/metrics.py",
+      "python/vessel_gnc/mpcc.py",
       "python/vessel_gnc/nmpc.py",
+      "python/vessel_gnc/path.py",
+      "python/vessel_gnc/prediction.py",
       "python/vessel_gnc/reference.py",
       "python/vessel_gnc/reference_artifacts.py",
       "python/vessel_gnc/sensors.py",
       "python/vessel_gnc/simulation.py",
       "python/vessel_gnc/visualization.py",
+      "results/reference/reference.schema.json",
       "src/actuator.cpp",
       "src/bindings.cpp",
       "src/controllers.cpp",
@@ -50,6 +55,6 @@
       "src/integrator.cpp",
       "tools/generate_reference_results.py"
     ],
-    "sha256": "4f7198bfe08cf9b7118c779a77d1fab84dd61c8cba8506322cb17b34624aa414"
+    "sha256": "4988f887eef5f91ce6cfb2424bb15dc73c7d351317fb00a351f664e1e5981c5d"
   }
 }

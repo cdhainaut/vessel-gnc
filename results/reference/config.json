@@ -1,21 +1,24 @@
 {
   "$schema": "results/reference/reference.schema.json",
   "artifact_type": "config",
-  "git_commit": "53e0958039310f59f44ec2b7be4a840dd0e882d2",
+  "git_commit": "5796fdcfa726f4359d0b4e43e9d03ecfe54c3e61",
   "scenario": {
     "components": {
+      "controller_disturbance_aware_mpcc": "disturbance_aware_mpcc_v1",
       "controller_disturbance_aware_nmpc": "disturbance_aware_nmpc_v1",
       "controller_los": "los_pid_v1",
       "controller_nmpc": "nominal_nmpc_v1",
       "environment": "rotating_current_gusts_v1",
       "estimator": "augmented_current_ekf_v1",
-      "path": "s_curve_v1"
+      "path": "smooth_s_curve_v1"
     },
     "control_periods": {
+      "estimator_s": 0.1,
       "los_s": 0.1,
+      "mpcc_s": 0.2,
       "nmpc_s": 0.2
     },
-    "description": "Flagship reference scenario: S-curve path (s_curve_v1) with LOS, nominal NMPC and disturbance-aware NMPC. All run on EKF state estimates under a rotating current, gusts and a perturbed truth plant; the aware predictor holds the EKF equivalent-current estimate constant over its horizon.",
+    "description": "Flagship reference scenario: one smooth S-curve geometry with LOS, nominal NMPC, disturbance-aware NMPC and disturbance-aware geometric MPCC. All run on matched EKF estimates under a rotating current, gusts and a perturbed truth plant; aware predictors hold the EKF equivalent-current estimate constant over their horizon.",
     "duration_s": 120.0,
     "environment": {
       "current_amplitude_m_s": 0.06,
@@ -30,7 +33,7 @@
       "gust_width_s": 5.0,
       "wind_mean_east_N": 3.0
     },
-    "id": "scenario_v2_disturbance_aware",
+    "id": "scenario_v3_mpcc",
     "integration_dt_s": 0.01,
     "los": {
       "heading_gains": {
@@ -46,6 +49,24 @@
         "kp": 25.0
       },
       "speed_thrust_limit_N": 40.0
+    },
+    "mpcc": {
+      "dt_s": 0.4,
+      "horizon": 25,
+      "progress_speed_max_m_s": 2.0,
+      "progress_speed_ref_m_s": 1.3,
+      "q_contour": 8.0,
+      "q_heading": 1.5,
+      "q_lag": 4.0,
+      "q_progress": 8.25,
+      "r_moment": 0.01,
+      "r_thrust": 0.002,
+      "r_vs": 0.5,
+      "s_moment": 0.05,
+      "s_thrust": 0.005,
+      "s_vs": 0.1,
+      "substeps": 2,
+      "warm_start": true
     },
     "nmpc": {
       "dt_s": 0.4,
@@ -81,12 +102,23 @@
       "thrust_time_constant_s": 1.0
     },
     "path": {
+      "interpolation": "piecewise_cubic_hermite_pchip",
       "lookahead_m": 8.0,
-      "name": "s_curve",
+      "name": "smooth_s_curve",
+      "out_of_domain_progress": "clamped",
+      "parameterization": "cumulative_waypoint_chord_length_m",
+      "parameterization_is_exact_arc_length": false,
+      "progress_domain_start_m": 0.0,
+      "projection": "global_closest_point_earliest_progress_tie_break",
       "speed_ref_m_s": 1.3,
+      "total_progress_m": 200.08715245005902,
       "waypoints": [
         [
           0.0,
+          0.0
+        ],
+        [
+          15.0,
           0.0
         ],
         [
@@ -94,15 +126,31 @@
           0.0
         ],
         [
+          42.5,
+          7.5
+        ],
+        [
           55.0,
           15.0
+        ],
+        [
+          62.5,
+          27.5
         ],
         [
           70.0,
           40.0
         ],
         [
+          77.5,
+          41.0
+        ],
+        [
           85.0,
+          42.0
+        ],
+        [
+          97.5,
           42.0
         ],
         [
@@ -110,12 +158,24 @@
           42.0
         ],
         [
+          117.5,
+          32.0
+        ],
+        [
           125.0,
           22.0
         ],
         [
+          135.0,
+          20.0
+        ],
+        [
           145.0,
           18.0
+        ],
+        [
+          155.0,
+          26.5
         ],
         [
           165.0,
@@ -131,7 +191,8 @@
         20.0,
         50.0,
         80.0
-      ]
+      ],
+      "path_render_samples": 501
     },
     "revision": 1,
     "seed": 42,
@@ -167,5 +228,5 @@
       "thrust_time_constant_s": 1.0
     }
   },
-  "schema_version": 2
+  "schema_version": 3
 }
