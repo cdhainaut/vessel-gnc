@@ -24,6 +24,7 @@ positive when the point is to the port/left of the path direction, matching
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import casadi as ca
@@ -43,15 +44,11 @@ def _validate_waypoints(waypoints: np.ndarray) -> np.ndarray:
     """Validate and copy waypoints: (M, 2) [North, East], M >= 2, finite."""
     wps = np.asarray(waypoints, dtype=float)
     if wps.ndim != 2 or wps.shape[1] != 2 or wps.shape[0] < 2:
-        raise ValueError(
-            "waypoints must be a (M, 2) array with M >= 2 (columns: North, East) [m]"
-        )
+        raise ValueError("waypoints must be a (M, 2) array with M >= 2 (columns: North, East) [m]")
     if not np.all(np.isfinite(wps)):
         raise ValueError("waypoints must be finite")
     for waypoint_index, waypoint in enumerate(wps[:-1]):
-        pairwise_distances = np.linalg.norm(
-            wps[waypoint_index + 1 :] - waypoint, axis=1
-        )
+        pairwise_distances = np.linalg.norm(wps[waypoint_index + 1 :] - waypoint, axis=1)
         if np.any(pairwise_distances <= _MIN_CHORD_LENGTH):
             raise ValueError(
                 "waypoints must be pairwise distinct "
@@ -95,9 +92,7 @@ def _fritsch_carlson_slopes(values: np.ndarray, chords: np.ndarray) -> np.ndarra
     return slopes
 
 
-def _hermite_coefficients(
-    values: np.ndarray, chords: np.ndarray, slopes: np.ndarray
-) -> np.ndarray:
+def _hermite_coefficients(values: np.ndarray, chords: np.ndarray, slopes: np.ndarray) -> np.ndarray:
     """Per-segment cubic coefficients ``p(u) = a + b u + c u^2 + d u^3``.
 
     With ``u = s - s_i`` the local progress inside segment ``i``; arrays are
@@ -127,57 +122,73 @@ def _refine_polyline(waypoints: np.ndarray, n_sub: int) -> np.ndarray:
     return np.asarray(refined, dtype=float)
 
 
+def _horner(value: float, coefficients: list[float]) -> float:
+    """Evaluate ascending-order coefficients at one point with Horner's rule."""
+    result = coefficients[-1]
+    for coefficient in coefficients[-2::-1]:
+        result = result * value + coefficient
+    return result
+
+
 def _real_roots_in_unit_interval(coefficients: np.ndarray) -> np.ndarray:
     """Find all real roots of a low-degree polynomial on ``[0, 1]``.
 
     Coefficients are in ascending power order. Recursive derivative-root
     isolation partitions the interval into monotone pieces, so sign-changing
     roots are bracketed and repeated roots are retained at derivative roots.
+    The scalar arithmetic is plain float arithmetic (Horner evaluation): the
+    solver is on the projection hot path and NumPy call overhead dominated the
+    root search, while the algorithm and its tolerances are unchanged.
     """
-    coeff = np.asarray(coefficients, dtype=float)
-    nonzero = np.flatnonzero(coeff)
-    if nonzero.size == 0:
+    coeff = [float(value) for value in coefficients]
+    while coeff and coeff[-1] == 0.0:
+        coeff.pop()
+    if not coeff:
         return np.empty(0)
-    coeff = coeff[: nonzero[-1] + 1]
-    coeff = coeff / np.max(np.abs(coeff))
+    scale = max(abs(value) for value in coeff)
+    coeff = [value / scale for value in coeff]
     degree = len(coeff) - 1
     if degree == 0:
         return np.empty(0)
     if degree == 1:
         root = -coeff[0] / coeff[1]
         if -_ROOT_VALUE_TOLERANCE <= root <= 1.0 + _ROOT_VALUE_TOLERANCE:
-            return np.array([np.clip(root, 0.0, 1.0)])
+            return np.array([min(max(root, 0.0), 1.0)])
         return np.empty(0)
 
-    derivative_coeff = np.arange(1, len(coeff)) * coeff[1:]
+    derivative_coeff = [index * value for index, value in enumerate(coeff)][1:]
     critical_points = _real_roots_in_unit_interval(derivative_coeff)
-    boundaries = np.unique(np.concatenate(([0.0], critical_points, [1.0])))
-    values = np.polynomial.polynomial.polyval(boundaries, coeff)
-    value_tolerance = _ROOT_VALUE_TOLERANCE * np.sum(np.abs(coeff))
-    roots = boundaries[np.abs(values) <= value_tolerance].tolist()
+    boundaries = sorted({0.0, 1.0, *(float(value) for value in critical_points)})
+    values = [_horner(boundary, coeff) for boundary in boundaries]
+    value_tolerance = _ROOT_VALUE_TOLERANCE * math.fsum(abs(value) for value in coeff)
+    roots = [
+        boundary
+        for boundary, value in zip(boundaries, values, strict=True)
+        if abs(value) <= value_tolerance
+    ]
 
     for left, right, value_left, value_right in zip(
         boundaries[:-1], boundaries[1:], values[:-1], values[1:], strict=True
     ):
         if value_left == 0.0 or value_right == 0.0:
             continue
-        if np.signbit(value_left) == np.signbit(value_right):
+        if (value_left < 0.0) == (value_right < 0.0):
             continue
         for _ in range(_ROOT_BISECTION_ITERATIONS):
             midpoint = 0.5 * (left + right)
             if midpoint == left or midpoint == right:
                 break
-            value_midpoint = np.polynomial.polynomial.polyval(midpoint, coeff)
+            value_midpoint = _horner(midpoint, coeff)
             if value_midpoint == 0.0:
                 left = right = midpoint
                 break
-            if np.signbit(value_midpoint) == np.signbit(value_left):
+            if (value_midpoint < 0.0) == (value_left < 0.0):
                 left, value_left = midpoint, value_midpoint
             else:
                 right, value_right = midpoint, value_midpoint
         roots.append(0.5 * (left + right))
 
-    return np.unique(np.clip(roots, 0.0, 1.0))
+    return np.asarray(sorted({min(max(root, 0.0), 1.0) for root in roots}), dtype=float)
 
 
 def _validate_regular_curve(
@@ -324,9 +335,7 @@ class PathGeometry:
 
     # --- NumPy evaluation --------------------------------------------------
 
-    def _evaluate(
-        self, coeff: np.ndarray, s: np.ndarray, deriv_order: int
-    ) -> np.ndarray:
+    def _evaluate(self, coeff: np.ndarray, s: np.ndarray, deriv_order: int) -> np.ndarray:
         """Evaluate one coordinate's piecewise cubic; ``s`` (n,) is clamped."""
         seg = np.clip(
             np.searchsorted(self._knots, s, side="right") - 1,
@@ -463,16 +472,10 @@ class PathGeometry:
         points_array = np.asarray(points, dtype=float)
         if points_array.ndim == 1 and points_array.shape == (2,):
             pts = points_array[None, :]
-        elif (
-            points_array.ndim == 2
-            and points_array.shape[1] == 2
-            and points_array.shape[0] > 0
-        ):
+        elif points_array.ndim == 2 and points_array.shape[1] == 2 and points_array.shape[0] > 0:
             pts = points_array
         else:
-            raise ValueError(
-                "points must be a non-empty (n, 2) array or one (2,) point"
-            )
+            raise ValueError("points must be a non-empty (n, 2) array or one (2,) point")
         if not np.all(np.isfinite(pts)):
             raise ValueError("points must be finite")
         n_points = pts.shape[0]
@@ -488,9 +491,7 @@ class PathGeometry:
                     "progress_hint_m must be a finite scalar or an (n,) array"
                 ) from error
             if not np.all(np.isfinite(hints)):
-                raise ValueError(
-                    "progress_hint_m must be a finite scalar or an (n,) array"
-                )
+                raise ValueError("progress_hint_m must be a finite scalar or an (n,) array")
 
         progress = np.empty(n_points)
         for point_index, point in enumerate(pts):
@@ -506,9 +507,7 @@ class PathGeometry:
         tangent = self.unit_tangent(progress)
         delta = pts - proj_pos
         cross_track = tangent[:, 1] * delta[:, 0] - tangent[:, 0] * delta[:, 1]
-        return PathProjection(
-            progress=progress, cross_track=cross_track, position=proj_pos
-        )
+        return PathProjection(progress=progress, cross_track=cross_track, position=proj_pos)
 
     # --- sampling and LOS --------------------------------------------------
 
@@ -527,9 +526,7 @@ class PathGeometry:
         s = np.linspace(0.0, self.length, n_points)
         return self.position(s), self.heading(s)
 
-    def lookahead_point(
-        self, point: np.ndarray, lookahead: float
-    ) -> tuple[np.ndarray, float]:
+    def lookahead_point(self, point: np.ndarray, lookahead: float) -> tuple[np.ndarray, float]:
         """LOS lookahead point and its progress [m] for one position.
 
         The lookahead lies ``lookahead`` [m] further in chord-progress from
@@ -592,12 +589,8 @@ class PathGeometry:
                 p_expr = ca.vertcat(poly_n, poly_e)
                 d_expr = ca.vertcat(der_n, der_e)
             else:
-                p_expr = ca.if_else(
-                    s_c < self._knots[i + 1], ca.vertcat(poly_n, poly_e), p_expr
-                )
-                d_expr = ca.if_else(
-                    s_c < self._knots[i + 1], ca.vertcat(der_n, der_e), d_expr
-                )
+                p_expr = ca.if_else(s_c < self._knots[i + 1], ca.vertcat(poly_n, poly_e), p_expr)
+                d_expr = ca.if_else(s_c < self._knots[i + 1], ca.vertcat(der_n, der_e), d_expr)
         t_expr = d_expr / ca.sqrt(ca.dot(d_expr, d_expr))
         h_expr = ca.atan2(t_expr[1], t_expr[0])
         self._f_position = ca.Function("path_position", [s], [p_expr])
