@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import sys
 import tomllib
 from pathlib import Path
 
@@ -21,63 +20,33 @@ import jsonschema
 import numpy as np
 import pytest
 import vessel_gnc
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:  # noqa: E402  (repo-local tool import)
-    sys.path.insert(0, str(REPO_ROOT))
-
-from vessel_gnc.path import make_s_curve_geometry  # noqa: E402
-from vessel_gnc.reference import (  # noqa: E402
+from vessel_gnc.metrics import CONTROLLER_METRIC_KEYS
+from vessel_gnc.path import make_s_curve_geometry
+from vessel_gnc.reference import (
+    ESTIMATOR_METRIC_KEYS,
     ControllerReferenceRun,
     EstimatorHistory,
     ReferenceRun,
     default_reference_config,
 )
-from vessel_gnc.reference_artifacts import (  # noqa: E402
+from vessel_gnc.reference_artifacts import (
     BENCHMARK_ID,
-    MARKDOWN_MARKERS,
     SCENARIO_ID,
     SCHEMA_VERSION,
     _scenario_document,
     check_reference_consistency,
     render_reference_assets,
     source_fingerprint,
-    update_generated_markdown,
     verify_reference_determinism,
     write_reference_json,
 )
-from vessel_gnc.simulation import SimulationResult  # noqa: E402
+from vessel_gnc.reference_markdown import MARKDOWN_MARKERS, update_generated_markdown
+from vessel_gnc.simulation import SimulationResult
 
-import tools.generate_reference_results as tool  # noqa: E402
+import tools.generate_reference_results as tool
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = REPO_ROOT / "results" / "reference" / "reference.schema.json"
-
-CONTROLLER_METRIC_KEYS = (
-    "cross_track_rms_m",
-    "cross_track_p95_m",
-    "cross_track_max_m",
-    "heading_error_rms_rad",
-    "heading_error_max_rad",
-    "path_progress_final_m",
-    "path_progress_fraction",
-    "mean_progress_rate_m_s",
-    "route_completion_s",
-    "thrust_rms_N",
-    "thrust_max_N",
-    "moment_rms_Nm",
-    "moment_max_Nm",
-    "thrust_saturation_duration_s",
-    "moment_saturation_duration_s",
-    "any_saturation_duration_s",
-)
-ESTIMATOR_METRIC_KEYS = (
-    "position_error_rms_m",
-    "position_error_max_m",
-    "yaw_rate_error_rms_rad_s",
-    "current_error_rms_m_s",
-    "current_error_max_m_s",
-    "current_error_transient_s",
-)
 
 
 def _synthetic_run() -> ReferenceRun:
@@ -219,15 +188,11 @@ def _write(reference_dir: Path) -> None:
 
 def _write_markdown(repo_root: Path) -> None:
     """Placeholder marker files for every documentation file in the mapping."""
-    for relpath in sorted(
-        {file for files in MARKDOWN_MARKERS.values() for file in files}
-    ):
+    for relpath in sorted({file for files in MARKDOWN_MARKERS.values() for file in files}):
         path = repo_root / relpath
         path.parent.mkdir(parents=True, exist_ok=True)
         marker_ids = [
-            marker_id
-            for marker_id, files in MARKDOWN_MARKERS.items()
-            if relpath in files
+            marker_id for marker_id, files in MARKDOWN_MARKERS.items() if relpath in files
         ]
         parts = [f"# {relpath}\n"]
         for marker_id in marker_ids:
@@ -271,10 +236,7 @@ def test_write_writes_canonical_sorted_json(tmp_path):
         assert text.endswith("\n")
         document = json.loads(text)
         # Canonical form: re-dumping with sorted keys reproduces the bytes.
-        assert (
-            json.dumps(document, indent=2, sort_keys=True, allow_nan=False) + "\n"
-            == text
-        )
+        assert json.dumps(document, indent=2, sort_keys=True, allow_nan=False) + "\n" == text
 
 
 def test_schema_uses_nullable_route_completion_s_only():
@@ -313,9 +275,7 @@ def test_metrics_artifact_has_no_timing_keys_and_exact_key_sets(tmp_path):
         assert "route_completion_time_s" not in controller
     assert set(metrics["estimator"]) == set(ESTIMATOR_METRIC_KEYS)
     for key in metrics:
-        assert not any(
-            token in key for token in ("solve", "wall", "elapsed", "_ms", "time_")
-        )
+        assert not any(token in key for token in ("solve", "wall", "elapsed", "_ms", "time_"))
 
 
 def test_metadata_hashes_cover_three_json_artifacts_only(tmp_path):
@@ -323,9 +283,7 @@ def test_metadata_hashes_cover_three_json_artifacts_only(tmp_path):
     _write(reference_dir)
     metadata = json.loads((reference_dir / "metadata.json").read_text())
     expected = {
-        f"results/reference/{name}": hashlib.sha256(
-            (reference_dir / name).read_bytes()
-        ).hexdigest()
+        f"results/reference/{name}": hashlib.sha256((reference_dir / name).read_bytes()).hexdigest()
         for name in ("config.json", "metrics.json", "benchmark.json")
     }
     assert metadata["artifacts"] == expected
@@ -357,9 +315,7 @@ def test_config_document_matches_default_scenario(tmp_path):
     assert path["progress_domain_start_m"] == 0.0
     assert path["total_progress_m"] > 0.0
     assert config["scenario"]["mpcc"]["q_progress"] == 8.25
-    expected_scenario = _scenario_document(
-        default_reference_config(), make_s_curve_geometry()
-    )
+    expected_scenario = _scenario_document(default_reference_config(), make_s_curve_geometry())
     assert config["scenario"] == expected_scenario
 
 
@@ -398,9 +354,7 @@ def test_write_rejects_non_finite_numbers(tmp_path):
     benchmark = _synthetic_benchmark()
     benchmark["workloads"]["kernel"]["ns_per_step"] = float("nan")
     with pytest.raises(ValueError):
-        write_reference_json(
-            _synthetic_run(), benchmark, tmp_path / "results" / "reference"
-        )
+        write_reference_json(_synthetic_run(), benchmark, tmp_path / "results" / "reference")
 
 
 # --- consistency check ---------------------------------------------------------
@@ -446,10 +400,7 @@ def test_check_consistency_detects_config_drift(tmp_path):
     config["scenario"]["duration_s"] = 121.0
     config_path.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n")
     problems = check_reference_consistency(tmp_path)
-    assert any(
-        "config.json no longer matches the current code" in problem
-        for problem in problems
-    )
+    assert any("config.json no longer matches the current code" in problem for problem in problems)
 
 
 def test_check_consistency_detects_scenario_id_violation(tmp_path):
@@ -542,9 +493,7 @@ def test_check_consistency_never_invokes_runner_or_metrics(tmp_path, monkeypatch
     import vessel_gnc.reference_artifacts as artifacts
 
     def forbid(*_args, **_kwargs):
-        raise AssertionError(
-            "reference runner or metrics must not be invoked by --check"
-        )
+        raise AssertionError("reference runner or metrics must not be invoked by --check")
 
     monkeypatch.setattr(artifacts, "run_reference_scenario", forbid)
     monkeypatch.setattr(artifacts, "reference_metrics", forbid)
@@ -582,9 +531,7 @@ def test_verify_determinism_requires_committed_metrics(tmp_path):
         verify_reference_determinism(tmp_path)
 
 
-def test_verify_determinism_accepts_1e8_predictive_and_estimator_deviation(
-    tmp_path, monkeypatch
-):
+def test_verify_determinism_accepts_1e8_predictive_and_estimator_deviation(tmp_path, monkeypatch):
     """A synthetic 1e-8 deviation passes: far inside rtol/atol = 1e-6."""
     reference_dir = tmp_path / "results" / "reference"
     _write(reference_dir)
@@ -607,9 +554,7 @@ def test_verify_determinism_accepts_1e8_predictive_and_estimator_deviation(
     verify_reference_determinism(tmp_path)  # must not raise
 
 
-def test_verify_determinism_rejects_1e3_nmpc_deviation_with_worst_key(
-    tmp_path, monkeypatch
-):
+def test_verify_determinism_rejects_1e3_nmpc_deviation_with_worst_key(tmp_path, monkeypatch):
     """A synthetic 1e-3 deviation fails, reporting the worst key and deviation."""
     reference_dir = tmp_path / "results" / "reference"
     _write(reference_dir)
@@ -720,8 +665,7 @@ def test_check_consistency_detects_edited_number_between_markers(tmp_path):
     readme.write_text(readme.read_text().replace("123.0 ns/step", "999.0 ns/step"))
     problems = check_reference_consistency(tmp_path)
     assert any(
-        "reference-benchmark-v1" in problem and "does not match" in problem
-        for problem in problems
+        "reference-benchmark-v1" in problem and "does not match" in problem for problem in problems
     )
 
 
@@ -760,9 +704,7 @@ def test_check_consistency_detects_start_without_end(tmp_path):
     _write(reference_dir)
     estimation = tmp_path / "docs" / "estimation.md"
     text = estimation.read_text()
-    estimation.write_text(
-        text.replace("<!-- generated:reference-estimator-v1:end -->", "")
-    )
+    estimation.write_text(text.replace("<!-- generated:reference-estimator-v1:end -->", ""))
     problems = check_reference_consistency(tmp_path)
     assert any("must appear exactly once" in problem for problem in problems)
 

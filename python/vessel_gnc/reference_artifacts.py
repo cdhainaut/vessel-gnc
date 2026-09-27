@@ -1,48 +1,10 @@
 """Committed reference artifacts: JSON, provenance, consistency, determinism.
 
-This module owns the four schema-valid reference artifacts under
-``results/reference/`` (plan M1): ``config.json`` (full scenario
-configuration with parameter values, not digests), ``metrics.json``
-(deterministic path-following and estimator metrics, no timing),
-``benchmark.json`` (machine-dependent timing only) and ``metadata.json``
-(software/platform versions, source fingerprint, artifact hashes, written
-last so its hashes cover the other three files and every committed asset).
-``render_reference_assets`` regenerates the flagship assets (hero animation,
-controller comparison, current estimation) and the ignored trajectory
-figure from a shared in-memory reference run.
-
-Canonical JSON form is fixed in the plan: sorted keys, two-space
-indentation, finite native numbers (``allow_nan=False``) and a trailing
-newline. ``check_reference_consistency`` is deliberately cheap — it never
-runs the reference scenario or the benchmark workload, so CI can validate
-the committed artifacts on every push. ``verify_reference_determinism`` is
-the only entry point that performs a fresh reference run, and it writes
-nothing. Its comparison follows the reproducibility contract: the LOS
-baseline metrics must reproduce exactly (no iterative solver), while the
-NMPC, MPCC and estimator metrics must match within ``rtol=1e-6, atol=1e-6``
-because IPOPT (``tol=1e-4``) can legitimately differ in the last ulps
-between runs; a violation is reported with the worst offending key and its
-deviation (docs/control.md §5).
-
-Provenance semantics: ``config.json``/``benchmark.json`` record the
-``git_commit`` and ``metadata.json`` records the ``dirty`` flag of the
-repository *at generation time*. These are honest historical records and
-are not compared against the current checkout — after the source is
-committed, a clean checkout reports a new HEAD and ``dirty: false`` while
-the artifact contents stay valid. The authoritative consistency check is
-the *content* source fingerprint (ordered source paths plus combined
-SHA-256 over ``SOURCE_GLOBS``): it changes if and only if a source file
-appears, disappears or changes content. The workflow is therefore either
-commit the source first and then regenerate the artifacts, or keep the
-source contents unchanged; ``--check`` then passes in any clean checkout
-whose tree has identical source contents, and fails whenever a source
-change is not reflected in the committed fingerprint.
-
-``update_generated_markdown`` owns the public Markdown numbers: every
-``<!-- generated:<marker-id>:start -->`` / ``<!-- generated:<marker-id>:end -->``
-pair in README.md and the documentation files gets its body regenerated
-from the committed reference JSON, so the only place public numbers can
-appear is between the markers — never hand-edited.
+Owns the four schema-valid ``results/reference/`` JSON documents, the flagship
+asset rendering, the generated Markdown marker bodies and the cheap
+``check_reference_consistency`` validation. The reproducibility and provenance
+contract (content source fingerprint, ``--check``, ``--verify-determinism``
+tolerances, generation environment) is documented once in ``docs/validation.md``.
 """
 
 from __future__ import annotations
@@ -51,7 +13,6 @@ import hashlib
 import json
 import math
 import platform
-import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -71,11 +32,11 @@ from vessel_gnc.reference import (
     reference_metrics,
     run_reference_scenario,
 )
+from vessel_gnc.reference_markdown import ARTIFACT_FILENAMES, marker_body_problems
 
 __all__ = [
     "write_reference_json",
     "render_reference_assets",
-    "update_generated_markdown",
     "check_reference_consistency",
     "verify_reference_determinism",
 ]
@@ -95,7 +56,6 @@ BENCHMARK_ID = "benchmark_v3"
 DETERMINISM_RTOL = 1e-6
 DETERMINISM_ATOL = 1e-6
 
-ARTIFACT_FILENAMES = ("config.json", "metrics.json", "benchmark.json", "metadata.json")
 COMMITTED_ASSET_RELPATHS = (
     "assets/hero.gif",
     "assets/controller_comparison.png",
@@ -125,47 +85,6 @@ _SCENARIO_DESCRIPTION = (
     "estimate constant over their horizon."
 )
 _TIMING_TOKENS = ("solve", "wall", "elapsed", "_ms", "time_")
-
-# Generated Markdown markers: each marker ID maps to the documentation files
-# that must contain exactly one ``<!-- generated:<id>:start -->`` /
-# ``<!-- generated:<id>:end -->`` pair. The bodies between the pairs are the
-# only place where public numbers are displayed; ``update_generated_markdown``
-# regenerates them from the committed reference JSON and never appends a
-# second table, so missing/duplicated/misplaced pairs are a hard error.
-MARKDOWN_MARKERS: dict[str, tuple[str, ...]] = {
-    "reference-benchmark-v1": ("README.md", "docs/validation.md"),
-    "reference-controller-comparison-v1": ("README.md", "docs/control.md"),
-    "reference-estimator-v1": ("docs/estimation.md",),
-    "reference-provenance-v1": ("README.md", "docs/validation.md"),
-}
-
-_MARKER_RE = re.compile(r"<!-- generated:([a-z0-9-]+):(start|end) -->")
-
-# Deterministic controller rows of the comparison marker, in display order:
-# (label, metrics.json key, format spec, convert-to-degrees flag).
-_COMPARISON_ROWS = (
-    ("RMS cross-track error [m]", "cross_track_rms_m", ".2f", False),
-    ("P95 cross-track error [m]", "cross_track_p95_m", ".2f", False),
-    ("Max cross-track error [m]", "cross_track_max_m", ".2f", False),
-    ("RMS wrapped heading error [deg]", "heading_error_rms_rad", ".1f", True),
-    ("Max wrapped heading error [deg]", "heading_error_max_rad", ".1f", True),
-    ("Final path progress [m]", "path_progress_final_m", ".1f", False),
-    ("Final path progress fraction [-]", "path_progress_fraction", ".3f", False),
-    ("Mean progress rate [m/s]", "mean_progress_rate_m_s", ".2f", False),
-    ("Route completion [s]", "route_completion_s", ".1f", False),
-    ("RMS applied thrust [N]", "thrust_rms_N", ".1f", False),
-    ("Max applied thrust [N]", "thrust_max_N", ".1f", False),
-    ("RMS applied yaw moment [N m]", "moment_rms_Nm", ".1f", False),
-    ("Max applied yaw moment [N m]", "moment_max_Nm", ".1f", False),
-    ("Thrust saturation duration [s]", "thrust_saturation_duration_s", ".1f", False),
-    (
-        "Yaw-moment saturation duration [s]",
-        "moment_saturation_duration_s",
-        ".1f",
-        False,
-    ),
-    ("Either channel saturated [s]", "any_saturation_duration_s", ".1f", False),
-)
 
 
 # --- public API --------------------------------------------------------------
@@ -201,17 +120,13 @@ def write_reference_json(
     repo_root = _repo_root_from(reference_dir)
     reference_dir.mkdir(parents=True, exist_ok=True)
     if run.path_geometry is None or run.disturbance_aware_mpcc is None:
-        raise ValueError(
-            "schema v3 reference runs require a PathGeometry and MPCC controller run"
-        )
+        raise ValueError("schema v3 reference runs require a PathGeometry and MPCC controller run")
     _write_json(
         reference_dir / "config.json",
         _config_document(repo_root, run.config, run.path_geometry),
     )
     _write_json(reference_dir / "metrics.json", _metrics_document(run))
-    _write_json(
-        reference_dir / "benchmark.json", _benchmark_document(benchmark, repo_root)
-    )
+    _write_json(reference_dir / "benchmark.json", _benchmark_document(benchmark, repo_root))
     _write_json(reference_dir / "metadata.json", _metadata_document(repo_root))
 
 
@@ -244,7 +159,7 @@ def render_reference_assets(run: ReferenceRun, repo_root: Path) -> list[Path]:
         ...     run_reference_scenario(), "."
         ... )  # doctest: +SKIP  (120 s flagship)
     """
-    from vessel_gnc.visualization import (
+    from vessel_gnc.reference_figures import (
         plot_controller_comparison,
         plot_current_estimation,
         plot_reference_trajectories,
@@ -331,8 +246,7 @@ def _render_hero(run: ReferenceRun, output_path: Path) -> None:
         )
         extra_horizon = run.disturbance_aware_mpcc.horizon
         extra_horizon_label = (
-            "geometric MPCC prediction "
-            f"({config.mpcc.horizon * config.mpcc.dt:.0f} s horizon)"
+            f"geometric MPCC prediction ({config.mpcc.horizon * config.mpcc.dt:.0f} s horizon)"
         )
 
     def progress_text(t: float, x: float, y: float) -> str | None:
@@ -341,8 +255,7 @@ def _render_hero(run: ReferenceRun, output_path: Path) -> None:
             return None
         (progress,) = run.path_geometry.project(np.array([[x, y]])).progress
         return (
-            f"path progress {progress:5.1f} m "
-            f"({100.0 * progress / run.path_geometry.length:3.1f}%)"
+            f"path progress {progress:5.1f} m ({100.0 * progress / run.path_geometry.length:3.1f}%)"
         )
 
     animate_trajectory(
@@ -360,57 +273,13 @@ def _render_hero(run: ReferenceRun, output_path: Path) -> None:
         reference_path=run.path,
         horizon=controller.horizon,
         horizon_label=(
-            "disturbance-aware prediction "
-            f"({config.nmpc.horizon * config.nmpc.dt:.0f} s horizon)"
+            f"disturbance-aware prediction ({config.nmpc.horizon * config.nmpc.dt:.0f} s horizon)"
         ),
         extra_trajectories=extra_trajectories,
         extra_horizon=extra_horizon,
         extra_horizon_label=extra_horizon_label,
         progress_text=progress_text,
     )
-
-
-def update_generated_markdown(repo_root: Path) -> None:
-    """Regenerate the numbers between the reference marker pairs.
-
-    Reads the four committed reference artifacts and rewrites the Markdown
-    bodies between every ``<!-- generated:<marker-id>:start -->`` /
-    ``<!-- generated:<marker-id>:end -->`` pair in README.md and the
-    documentation files. All displayed numbers are formatted from the JSON
-    artifacts — nothing is hand-entered — so a regeneration cannot drift
-    from the committed data. Missing, duplicated, malformed or misplaced
-    marker pairs are a hard error: the generator never appends a second
-    table. Documentation files are left untouched when the reference
-    artifacts are absent (the default pipeline writes them first).
-
-    Args:
-        repo_root: repository root containing ``results/reference/`` and
-            the Markdown files.
-
-    Example:
-        >>> from vessel_gnc.reference_artifacts import update_generated_markdown
-        >>> update_generated_markdown(".")  # doctest: +SKIP
-    """
-    repo_root = Path(repo_root)
-    reference_dir = repo_root / "results" / "reference"
-    if any(not (reference_dir / name).is_file() for name in ARTIFACT_FILENAMES):
-        return None
-    bodies = _marker_bodies(repo_root)
-    for relpath in _marker_relpaths():
-        path = repo_root / relpath
-        if not path.is_file():
-            continue
-        original = path.read_text()
-        text = original
-        pairs = _marker_pairs(text, relpath)
-        _validate_marker_placement(relpath, pairs)
-        for marker_id, body_start, body_end in sorted(
-            pairs, key=lambda pair: pair[1], reverse=True
-        ):
-            text = text[:body_start] + bodies[marker_id] + text[body_end:]
-        if text != original:
-            path.write_text(text)
-    return None
 
 
 def check_reference_consistency(repo_root: Path) -> list[str]:
@@ -493,17 +362,13 @@ def check_reference_consistency(repo_root: Path) -> list[str]:
             config_document, expected, ignored_keys=frozenset({"git_commit"})
         )
         if difference is not None:
-            problems.append(
-                f"config.json no longer matches the current code ({difference})"
-            )
+            problems.append(f"config.json no longer matches the current code ({difference})")
 
     metrics_document = documents.get("metrics.json")
     if metrics_document is not None:
         timing_keys = _timing_keys(metrics_document)
         if timing_keys:
-            problems.append(
-                f"metrics.json contains timing-like keys: {sorted(timing_keys)}"
-            )
+            problems.append(f"metrics.json contains timing-like keys: {sorted(timing_keys)}")
         if not _numbers_finite(metrics_document):
             problems.append("metrics.json contains non-finite numbers")
 
@@ -512,15 +377,11 @@ def check_reference_consistency(repo_root: Path) -> list[str]:
         recorded = metadata_document.get("source_fingerprint", {})
         current = source_fingerprint(repo_root)
         if not _source_fingerprint_matches(recorded, current):
-            problems.append(
-                "metadata.json source_fingerprint does not match the current tree"
-            )
+            problems.append("metadata.json source_fingerprint does not match the current tree")
         if metadata_document.get("artifacts") != _artifact_hashes(repo_root):
-            problems.append(
-                "metadata.json artifact hashes do not match the committed files"
-            )
+            problems.append("metadata.json artifact hashes do not match the committed files")
 
-    problems.extend(_marker_body_problems(repo_root))
+    problems.extend(marker_body_problems(repo_root))
     return problems
 
 
@@ -556,10 +417,7 @@ def verify_reference_determinism(repo_root: Path) -> None:
     fresh = reference_metrics(run_reference_scenario())
 
     los_dotted = f"controllers.{LOS_COMPONENT_ID}"
-    if (
-        committed["controllers"][LOS_COMPONENT_ID]
-        != fresh["controllers"][LOS_COMPONENT_ID]
-    ):
+    if committed["controllers"][LOS_COMPONENT_ID] != fresh["controllers"][LOS_COMPONENT_ID]:
         difference = _first_difference(
             committed["controllers"][LOS_COMPONENT_ID],
             fresh["controllers"][LOS_COMPONENT_ID],
@@ -589,9 +447,7 @@ def verify_reference_determinism(repo_root: Path) -> None:
         ),
         ("estimator", committed["estimator"], fresh["estimator"]),
     ):
-        violation = _worst_metric_violation(
-            committed_section, fresh_section, f"{dotted}."
-        )
+        violation = _worst_metric_violation(committed_section, fresh_section, f"{dotted}.")
         if violation is not None:
             path, abs_dev, rel_dev, _ = violation
             raise AssertionError(
@@ -605,316 +461,6 @@ def verify_reference_determinism(repo_root: Path) -> None:
 
 
 # --- generated Markdown markers ---------------------------------------------
-
-
-def _marker_relpaths() -> tuple[str, ...]:
-    """The documentation files that may contain generated markers, sorted."""
-    files = {relpath for relpaths in MARKDOWN_MARKERS.values() for relpath in relpaths}
-    return tuple(sorted(files))
-
-
-def _marker_pairs(text: str, relpath: str) -> list[tuple[str, int, int]]:
-    """``(marker_id, body_start, body_end)`` for each complete marker pair.
-
-    ``body_start``/``body_end`` are the character offsets of the body between
-    the start and end comment. Raises ``ValueError`` on unknown marker IDs,
-    malformed pairs (start without end or vice versa) and duplicated pairs.
-    """
-    starts: dict[str, list[int]] = {}
-    ends: dict[str, list[int]] = {}
-    for match in _MARKER_RE.finditer(text):
-        marker_id, kind = match.group(1), match.group(2)
-        if kind == "start":
-            starts.setdefault(marker_id, []).append(match.end())
-        else:
-            ends.setdefault(marker_id, []).append(match.start())
-    problems: list[str] = []
-    for marker_id in starts:
-        if marker_id not in MARKDOWN_MARKERS:
-            problems.append(f"{relpath}: unknown generated marker '{marker_id}'")
-        elif len(starts[marker_id]) != 1 or len(ends.get(marker_id, [])) != 1:
-            problems.append(
-                f"{relpath}: generated marker '{marker_id}' must appear exactly "
-                "once as a start/end pair"
-            )
-    for marker_id in ends:
-        if marker_id not in starts:
-            problems.append(
-                f"{relpath}: generated marker '{marker_id}' end without start"
-            )
-    if problems:
-        raise ValueError("; ".join(problems))
-    return [
-        (marker_id, starts[marker_id][0], ends[marker_id][0]) for marker_id in starts
-    ]
-
-
-def _validate_marker_placement(relpath: str, pairs: list[tuple[str, int, int]]) -> None:
-    """The marker set of a file must equal its expected set exactly."""
-    expected = {
-        marker_id
-        for marker_id, relpaths in MARKDOWN_MARKERS.items()
-        if relpath in relpaths
-    }
-    present = {marker_id for marker_id, _, _ in pairs}
-    if present != expected:
-        details: list[str] = []
-        missing = sorted(expected - present)
-        extra = sorted(present - expected)
-        if missing:
-            details.append(f"missing marker(s): {', '.join(missing)}")
-        if extra:
-            details.append(f"unexpected marker(s): {', '.join(extra)}")
-        raise ValueError(f"{relpath}: {'; '.join(details)}")
-
-
-def _marker_bodies(repo_root: Path) -> dict[str, str]:
-    """Generated Markdown body per marker ID, formatted from the reference JSON.
-
-    Every displayed number is formatted from
-    ``results/reference/{config,metrics,benchmark,metadata}.json``; the bodies
-    are byte-identical for a given artifact state, so the consistency check
-    compares them exactly with the committed documentation.
-    """
-    reference_dir = repo_root / "results" / "reference"
-    config = json.loads((reference_dir / "config.json").read_text())
-    metrics = json.loads((reference_dir / "metrics.json").read_text())
-    benchmark = json.loads((reference_dir / "benchmark.json").read_text())
-    metadata = json.loads((reference_dir / "metadata.json").read_text())
-
-    scenario = config["scenario"]
-    components = scenario["components"]
-    controllers = metrics["controllers"]
-    workloads = benchmark["workloads"]
-
-    return {
-        "reference-benchmark-v1": _benchmark_body(benchmark, workloads),
-        "reference-controller-comparison-v1": _comparison_body(
-            scenario,
-            controllers[LOS_COMPONENT_ID],
-            controllers[NMPC_COMPONENT_ID],
-            controllers[DISTURBANCE_AWARE_NMPC_COMPONENT_ID],
-            controllers[MPCC_COMPONENT_ID],
-        ),
-        "reference-estimator-v1": _estimator_body(scenario, metrics["estimator"]),
-        "reference-provenance-v1": _provenance_body(
-            config, metadata, scenario, components
-        ),
-    }
-
-
-def _benchmark_body(benchmark: dict, workloads: dict) -> str:
-    """The machine-dependent benchmark table (README/validation)."""
-    kernel = workloads["kernel"]
-    simulation = workloads["simulation"]
-    controllers = (
-        ("Nominal NMPC", workloads["nmpc_nominal"]),
-        ("Disturbance-aware NMPC", workloads["nmpc_disturbance_aware"]),
-        ("Disturbance-aware MPCC", workloads["mpcc_disturbance_aware"]),
-    )
-    sample_count = sum(workload["samples"] for _, workload in controllers)
-    failed_count = sum(workload["failed_solves"] for _, workload in controllers)
-    budget_ms = controllers[0][1]["control_budget_ms"]
-    controller_rows = "".join(
-        f"| {label} mean / median / p95 / max [ms] | "
-        f"**{workload['mean_ms']:.1f} / {workload['median_ms']:.1f} / "
-        f"{workload['p95_ms']:.1f} / {workload['max_ms']:.1f}** |\n"
-        for label, workload in controllers
-    )
-    status_summary = "; ".join(
-        f"{label}: {workload['samples']} samples, "
-        f"{workload['failed_solves']} failed, "
-        + ", ".join(
-            f"{status}={count}"
-            for status, count in workload["final_status_histogram"].items()
-        )
-        for label, workload in controllers
-    )
-    return (
-        "\n"
-        "| Metric | Result |\n"
-        "|---|---:|\n"
-        f"| C++ RK4 propagation (vessel + actuator) | "
-        f"**{kernel['ns_per_step']:.1f} ns/step** |\n"
-        f"| 1000 s simulation (Python loop) | "
-        f"**{simulation['wall_time_ms']:.0f} ms** |\n"
-        f"{controller_rows}"
-        "\n"
-        f"Machine-dependent wall-clock measurements recorded in "
-        f"`results/reference/benchmark.json` (`{benchmark['benchmark_id']}`, "
-        f"{sample_count} predictive solves, {failed_count} failed). "
-        f"Per-workload status histograms: {status_summary}. The 5 Hz control "
-        f"period defines a {budget_ms:.0f} ms budget; these solve times make "
-        f"no real-time capability claim. Regenerate with "
-        f"`python tools/generate_reference_results.py`.\n"
-        "\n"
-    )
-
-
-def _comparison_body(
-    scenario: dict,
-    los: dict,
-    nominal: dict,
-    disturbance_aware: dict,
-    mpcc: dict,
-) -> str:
-    """The deterministic four-controller comparison table."""
-    lines = [
-        "| Metric | LOS (PID/PI) | Nominal NMPC | Aware NMPC | Aware MPCC |",
-        "|---|---:|---:|---:|---:|",
-    ]
-    for label, key, spec, degrees in _COMPARISON_ROWS:
-        lines.append(
-            f"| {label} | {_fmt(los[key], spec, degrees)} | "
-            f"{_fmt(nominal[key], spec, degrees)} | "
-            f"{_fmt(disturbance_aware[key], spec, degrees)} | "
-            f"{_fmt(mpcc[key], spec, degrees)} |"
-        )
-    return (
-        "\n"
-        + "\n".join(lines)
-        + "\n\n"
-        + "Deterministic flagship metrics formatted from "
-        "`results/reference/metrics.json` "
-        f"(scenario `{SCENARIO_ID}`, revision {scenario['revision']}, "
-        f"seed {scenario['seed']}, {scenario['duration_s']:.1f} s at "
-        f"{scenario['integration_dt_s']:.2f} s integration). Route completion "
-        "is the first sample at 99% of total chord progress; an incomplete "
-        "route is shown as —. Saturation counts left-closed intervals whose "
-        "applied value lies within 1% of a `ModelParams` bound span "
-        "(docs/validation.md). No wall-clock timing appears here: predictive "
-        "solve times are machine-dependent and reported separately in the "
-        "benchmark table.\n"
-        "\n"
-    )
-
-
-def _estimator_body(scenario: dict, estimator: dict) -> str:
-    """The deterministic estimator-metrics table (docs/estimation.md)."""
-    transient = estimator["current_error_transient_s"]
-    return (
-        "\n"
-        "| Metric | Value |\n"
-        "|---|---:|\n"
-        f"| Position error RMS [m] | {estimator['position_error_rms_m']:.2f} |\n"
-        f"| Position error max [m] | {estimator['position_error_max_m']:.2f} |\n"
-        f"| Yaw-rate error RMS [rad/s] | "
-        f"{estimator['yaw_rate_error_rms_rad_s']:.3f} |\n"
-        f"| Equivalent-current difference RMS [m/s] "
-        f"(after {transient:.1f} s transient) | "
-        f"{estimator['current_error_rms_m_s']:.3f} |\n"
-        f"| Equivalent-current difference max [m/s] "
-        f"(after {transient:.1f} s transient) | "
-        f"{estimator['current_error_max_m_s']:.3f} |\n"
-        "\n"
-        "Estimator errors of the NMPC reference run, computed from the "
-        "callback-aligned true/estimated records and formatted from "
-        f"`results/reference/metrics.json` (scenario `{SCENARIO_ID}`, "
-        f"seed {scenario['seed']}). In this combined-uncertainty run the "
-        "augmented state is an equivalent-current proxy: wind gusts and model "
-        "mismatch can shift it away from the physical current. The difference "
-        "reported here quantifies that confounding (docs/estimation.md §5); "
-        "the isolated current-only validation is reported separately.\n"
-        "\n"
-    )
-
-
-def _provenance_body(
-    config: dict, metadata: dict, scenario: dict, components: dict
-) -> str:
-    """The scenario/provenance table (README/validation)."""
-    fingerprint = metadata["source_fingerprint"]
-    return (
-        "\n"
-        "| Item | Value |\n"
-        "|---|---|\n"
-        f"| Scenario | `{scenario['id']}` (revision {scenario['revision']}) |\n"
-        f"| Seed | {scenario['seed']} |\n"
-        f"| Duration / integration step | {scenario['duration_s']:.1f} s / "
-        f"{scenario['integration_dt_s']:.2f} s |\n"
-        f"| Controllers | `{components['controller_los']}` · "
-        f"`{components['controller_nmpc']}` · "
-        f"`{components['controller_disturbance_aware_nmpc']}` · "
-        f"`{components['controller_disturbance_aware_mpcc']}` |\n"
-        f"| Estimator | `{components['estimator']}` |\n"
-        "| Schema | `results/reference/reference.schema.json` "
-        f"(version {config['schema_version']}) |\n"
-        "| Deterministic metrics | `results/reference/metrics.json` |\n"
-        "| Machine-dependent benchmark | `results/reference/benchmark.json` |\n"
-        f"| Generated at (UTC) | {metadata['generated_at_utc']} |\n"
-        f"| Source commit | `{config['git_commit']}` |\n"
-        f"| Source fingerprint | dirty: {str(fingerprint['dirty']).lower()} · "
-        f"`{fingerprint['sha256']}` |\n"
-        "\n"
-        "`git_commit` and the `dirty` flag record the repository state at "
-        "generation time; the source fingerprint is content-based and "
-        "authoritative. After committing source changes, either regenerate "
-        "the artifacts (`python tools/generate_reference_results.py`) or "
-        "keep the source contents unchanged: `--check` compares only the "
-        "content fingerprint, so a clean checkout at a new commit passes "
-        "when the source contents are unchanged and fails when they "
-        "changed. `--check` validates schema, scenario, source fingerprint, "
-        "artifact hashes and marker bodies without any simulation; "
-        "`--verify-determinism` runs one fresh 120 s reference and compares "
-        "it with `results/reference/metrics.json`: the LOS baseline metrics "
-        "exactly, and both NMPC variants, MPCC plus estimator metrics within "
-        "`rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its "
-        "full-precision iterates may differ in the last ulps), reporting "
-        "the worst offending key and deviation on failure. Reproducibility "
-        "is guaranteed within the software environment recorded in "
-        "`metadata.json` (`software` block): regenerating in another "
-        "environment requires a fresh `--verify-determinism` in that "
-        "environment before the committed metrics can be trusted.\n"
-        "\n"
-    )
-
-
-def _fmt(value: object, spec: str, degrees: bool = False) -> str:
-    """Format a JSON number, optionally converted to degrees, for a cell."""
-    if value is None:
-        return "—"
-    number = float(value)
-    if degrees:
-        number = math.degrees(number)
-    return f"{number:{spec}}"
-
-
-def _marker_body_problems(repo_root: Path) -> list[str]:
-    """Marker structure and body-equality problems of the documentation files.
-
-    Body equality is only meaningful once the reference artifacts exist;
-    missing artifacts are already reported by the main consistency check.
-    """
-    reference_dir = repo_root / "results" / "reference"
-    if any(not (reference_dir / name).is_file() for name in ARTIFACT_FILENAMES):
-        return []
-    try:
-        bodies = _marker_bodies(repo_root)
-    except (json.JSONDecodeError, KeyError, OSError, ValueError) as exc:
-        return [f"cannot regenerate marker bodies from the reference JSON: {exc}"]
-    problems: list[str] = []
-    for relpath in _marker_relpaths():
-        path = repo_root / relpath
-        if not path.is_file():
-            continue
-        text = path.read_text()
-        try:
-            pairs = _marker_pairs(text, relpath)
-            _validate_marker_placement(relpath, pairs)
-        except ValueError as exc:
-            problems.append(str(exc))
-            continue
-        for marker_id, body_start, body_end in pairs:
-            if text[body_start:body_end] != bodies[marker_id]:
-                problems.append(
-                    f"{relpath}: marker '{marker_id}' body does not match the "
-                    "committed reference JSON (regenerate with "
-                    "python tools/generate_reference_results.py)"
-                )
-    return problems
-
-
-# --- document assembly --------------------------------------------------------
 
 
 def _config_document(
@@ -978,9 +524,7 @@ def _scenario_document(
             "total_progress_m": path.length,
             "speed_ref_m_s": config.speed_ref_m_s,
             "lookahead_m": config.lookahead_m,
-            "waypoints": [
-                [float(north), float(east)] for north, east in path.waypoints
-            ],
+            "waypoints": [[float(north), float(east)] for north, east in path.waypoints],
         },
         "environment": {
             "current_base_east_m_s": env.current_base_east,
@@ -1064,9 +608,7 @@ def _metrics_document(run: ReferenceRun) -> dict[str, object]:
     }
 
 
-def _benchmark_document(
-    benchmark: dict[str, object], repo_root: Path
-) -> dict[str, object]:
+def _benchmark_document(benchmark: dict[str, object], repo_root: Path) -> dict[str, object]:
     """The benchmark.json artifact: machine-dependent timing only."""
     if benchmark.get("benchmark_id") != BENCHMARK_ID or "workloads" not in benchmark:
         raise ValueError(
@@ -1253,9 +795,7 @@ def _read_optional(path: Path) -> bytes:
         return b""
 
 
-def _source_fingerprint_matches(
-    recorded: dict[str, object], current: dict[str, object]
-) -> bool:
+def _source_fingerprint_matches(recorded: dict[str, object], current: dict[str, object]) -> bool:
     """Content-based fingerprint equality: source list and combined digest.
 
     ``dirty`` is a generation-time provenance record (as are the
@@ -1265,10 +805,7 @@ def _source_fingerprint_matches(
     The content fingerprint remains authoritative — any scenario/parameter/
     source change alters ``files`` or ``sha256`` and fails the check.
     """
-    return (
-        recorded.get("files") == current["files"]
-        and recorded.get("sha256") == current["sha256"]
-    )
+    return recorded.get("files") == current["files"] and recorded.get("sha256") == current["sha256"]
 
 
 def _first_difference(
@@ -1367,9 +904,7 @@ def _worst_metric_violation(
             if key not in committed or key not in fresh:
                 violation = (f"{prefix}{key}", math.inf, math.inf, math.inf)
             else:
-                violation = _worst_metric_violation(
-                    committed[key], fresh[key], f"{prefix}{key}."
-                )
+                violation = _worst_metric_violation(committed[key], fresh[key], f"{prefix}{key}.")
             worst = _pick_worst(worst, violation)
         return worst
     if isinstance(committed, list) and isinstance(fresh, list):

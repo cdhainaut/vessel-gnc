@@ -33,18 +33,22 @@ from datetime import datetime
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
-from vessel_gnc.reference import default_reference_config
+from vessel_gnc.metrics import CONTROLLER_METRIC_KEYS
+from vessel_gnc.prediction import ACCEPTED_IPOPT_STATUSES
+from vessel_gnc.reference import ESTIMATOR_METRIC_KEYS, default_reference_config
 from vessel_gnc.reference_artifacts import (
-    MARKDOWN_MARKERS,
     SCENARIO_ID,
     SCHEMA_VERSION,
     _artifact_hashes,
+    check_reference_consistency,
+    source_fingerprint,
+)
+from vessel_gnc.reference_markdown import (
+    MARKDOWN_MARKERS,
     _marker_bodies,
     _marker_pairs,
     _marker_relpaths,
     _validate_marker_placement,
-    check_reference_consistency,
-    source_fingerprint,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -59,41 +63,9 @@ EXPECTED_ARTIFACT_TYPES = {
     "metadata.json": "metadata",
 }
 
-# Deterministic metric key contract (mirrors reference.schema.json
-# #/$defs/controllerMetrics and #/$defs/estimatorMetrics).
-CONTROLLER_METRIC_KEYS = (
-    "cross_track_rms_m",
-    "cross_track_p95_m",
-    "cross_track_max_m",
-    "heading_error_rms_rad",
-    "heading_error_max_rad",
-    "path_progress_final_m",
-    "path_progress_fraction",
-    "mean_progress_rate_m_s",
-    "route_completion_s",
-    "thrust_rms_N",
-    "thrust_max_N",
-    "moment_rms_Nm",
-    "moment_max_Nm",
-    "thrust_saturation_duration_s",
-    "moment_saturation_duration_s",
-    "any_saturation_duration_s",
-)
-ESTIMATOR_METRIC_KEYS = (
-    "position_error_rms_m",
-    "position_error_max_m",
-    "yaw_rate_error_rms_rad_s",
-    "current_error_rms_m_s",
-    "current_error_max_m_s",
-    "current_error_transient_s",
-)
-
 # Tokens that would betray a wall-clock timing value in the deterministic
 # metrics artifact (independent of reference_artifacts._timing_keys).
 _TIMING_TOKENS = ("solve", "wall", "elapsed", "_ms", "time_")
-
-# IPOPT final statuses treated as accepted solves (python/vessel_gnc/nmpc.py).
-_ACCEPTED_STATUSES = ("Solve_Succeeded", "Solved_To_Acceptable_Level")
 
 # The three non-metadata JSON artifacts and the three committed generated
 # assets whose hashes must be recorded in metadata.json["artifacts"].
@@ -299,14 +271,10 @@ def test_benchmark_has_required_statistics_without_timing_assertions():
         assert nmpc["failed_solves"] >= 0
         histogram = nmpc["final_status_histogram"]
         assert isinstance(histogram, dict) and len(histogram) >= 1
-        assert all(
-            isinstance(count, int) and count >= 0 for count in histogram.values()
-        )
+        assert all(isinstance(count, int) and count >= 0 for count in histogram.values())
         assert sum(histogram.values()) == nmpc["samples"]
         assert nmpc["failed_solves"] == sum(
-            count
-            for status, count in histogram.items()
-            if status not in _ACCEPTED_STATUSES
+            count for status, count in histogram.items() if status not in ACCEPTED_IPOPT_STATUSES
         )
     # The benchmark artifact carries timing only: no deterministic tracking
     # metric key may appear anywhere in it.
@@ -392,9 +360,7 @@ def test_check_consistency_invokes_neither_runner_nor_benchmark(monkeypatch):
     import vessel_gnc.reference_artifacts as artifacts
 
     def forbid(*_args, **_kwargs):
-        raise AssertionError(
-            "check_reference_consistency must not invoke the expensive runner"
-        )
+        raise AssertionError("check_reference_consistency must not invoke the expensive runner")
 
     monkeypatch.setattr(artifacts, "run_reference_scenario", forbid)
     monkeypatch.setattr(artifacts, "reference_metrics", forbid)
@@ -417,9 +383,7 @@ def test_normal_pytest_cannot_launch_the_flagship():
             "the runner with no arguments",
         ),
         (
-            re.compile(
-                r"run_reference_scenario\s*\(\s*default_reference_config\s*\(\s*\)\s*\)"
-            ),
+            re.compile(r"run_reference_scenario\s*\(\s*default_reference_config\s*\(\s*\)\s*\)"),
             "the runner with the default configuration",
         ),
         (

@@ -46,9 +46,7 @@ def _close_figures():
 
 def test_render_writes_all_four_assets(tmp_path, short_run):
     written = render_reference_assets(short_run, tmp_path)
-    assert [path.relative_to(tmp_path).as_posix() for path in written] == list(
-        EXPECTED_RELPATHS
-    )
+    assert [path.relative_to(tmp_path).as_posix() for path in written] == list(EXPECTED_RELPATHS)
     for path in written:
         assert path.is_file()
         assert path.stat().st_size > 0
@@ -108,7 +106,7 @@ def test_comparison_figure_shows_all_four_controllers_and_progress(tmp_path, sho
     # (LOS, nominal NMPC, aware NMPC, geometric MPCC) in every panel and
     # compact path-progress rows in the metrics table.
     from vessel_gnc.reference import reference_metrics
-    from vessel_gnc.visualization import plot_controller_comparison
+    from vessel_gnc.reference_figures import plot_controller_comparison
 
     out = tmp_path / "comparison.png"
     figure = plot_controller_comparison(short_run, reference_metrics(short_run), out)
@@ -127,9 +125,7 @@ def test_comparison_figure_shows_all_four_controllers_and_progress(tmp_path, sho
     cells = table.get_celld()
     row_count = max(row for row, _ in cells) + 1
     column_count = max(column for _, column in cells) + 1
-    header = [
-        cells[(0, column)].get_text().get_text() for column in range(column_count)
-    ]
+    header = [cells[(0, column)].get_text().get_text() for column in range(column_count)]
     assert header[0] == ""
     assert header[1:] == ["LOS", "Nominal", "Aware", "MPCC"]
     first_column = [cells[(row, 0)].get_text().get_text() for row in range(row_count)]

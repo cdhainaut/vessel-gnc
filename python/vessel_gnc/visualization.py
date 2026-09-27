@@ -19,19 +19,21 @@ from matplotlib.patches import Polygon
 from matplotlib.transforms import Affine2D
 
 from vessel_gnc import _core
-from vessel_gnc.guidance import project_onto_path
+from vessel_gnc.plot_style import (
+    SINGLE_SIZE,
+    apply_style,
+    save_figure,
+)
 from vessel_gnc.simulation import EnvironmentPolicy, SimulationResult
 
 if TYPE_CHECKING:
-    from vessel_gnc.reference import ReferenceRun
+    pass
 
 __all__ = [
     "plot_trajectory",
     "animate_trajectory",
     "draw_vessel",
-    "plot_reference_trajectories",
-    "plot_controller_comparison",
-    "plot_current_estimation",
+    "environment_arrows",
 ]
 
 # Hull outline in the body frame [m] (x forward, y starboard): a ~1.5 m long,
@@ -81,7 +83,7 @@ def _set_vessel_pose(hull, heading, x: float, y: float, psi: float) -> None:
     heading.set_data([x, x + 1.3 * np.cos(psi)], [y, y + 1.3 * np.sin(psi)])
 
 
-def _environment_arrows(
+def environment_arrows(
     ax,
     environment: _core.Environment | None,
     x0: float,
@@ -112,16 +114,12 @@ def _environment_arrows(
             "",
             xy=tip,
             xytext=(x0, y0),
-            arrowprops=dict(
-                arrowstyle="->", color="tab:blue", lw=2, linestyle=linestyle
-            ),
+            arrowprops=dict(arrowstyle="->", color="tab:blue", lw=2, linestyle=linestyle),
             zorder=5,
         )
         quantity = "equiv. current (EKF)" if estimated else "physical current"
         label = f"{quantity} ({np.hypot(vn, ve):.2f} m/s)"
-        handles.append(
-            (plt.Line2D([], [], color="tab:blue", lw=2, ls=linestyle), label)
-        )
+        handles.append((plt.Line2D([], [], color="tab:blue", lw=2, ls=linestyle), label))
         if annotate:
             ax.text(tip[0] + 0.2, tip[1] + 0.2, label, fontsize=8, color="tab:blue")
 
@@ -163,11 +161,11 @@ def plot_trajectory(
         >>> result = simulate(30.0, 0.01, control=_core.Control(thrust=40.0))
         >>> figure = plot_trajectory(result, output_path="results/example.png")
     """
+    apply_style()
     speed = np.hypot(result.u, result.v)
 
-    fig, ax = plt.subplots(figsize=(7.2, 6.4))
+    fig, ax = plt.subplots(figsize=SINGLE_SIZE)
     ax.set_aspect("equal")
-    ax.grid(alpha=0.3)
 
     # Path coloured by speed.
     points = ax.scatter(result.x, result.y, c=speed, s=6, cmap="viridis", zorder=3)
@@ -193,14 +191,12 @@ def plot_trajectory(
 
     # Start / end markers and the vessel at its final pose.
     (start_line,) = ax.plot(result.x[0], result.y[0], "o", color="tab:green", ms=8)
-    (end_line,) = ax.plot(
-        result.x[-1], result.y[-1], "x", color="tab:red", ms=10, mew=2
-    )
+    (end_line,) = ax.plot(result.x[-1], result.y[-1], "x", color="tab:red", ms=10, mew=2)
     draw_vessel(ax, result.x[-1], result.y[-1], result.psi[-1])
 
     # Environment arrows (with legend entries carrying the true values).
     handles = [(start_line, "start"), (end_line, "end")]
-    handles += _environment_arrows(ax, environment, result.x[0], result.y[0])
+    handles += environment_arrows(ax, environment, result.x[0], result.y[0])
     if handles:
         artists, labels = zip(*handles, strict=True)
         ax.legend(list(artists), list(labels), loc="best", framealpha=0.9)
@@ -211,9 +207,7 @@ def plot_trajectory(
     fig.tight_layout()
 
     if output_path is not None:
-        out = Path(output_path)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out, dpi=150, bbox_inches="tight")
+        save_figure(fig, output_path)
     return fig
 
 
@@ -275,11 +269,13 @@ def animate_trajectory(
         extra_horizon_label: legend entry for the second prediction line.
         progress_text: optional callback returning a path-progress line.
     """
+    apply_style()
     speed = np.hypot(result.u, result.v)
 
-    fig, ax = plt.subplots(figsize=(7.2, 6.4))
+    fig, ax = plt.subplots(figsize=(9.0, 6.4))
     ax.set_aspect("equal")
-    ax.grid(alpha=0.3)
+    # Room under the axes for the shared legend row; the title must fit.
+    fig.subplots_adjust(left=0.08, right=0.98, top=0.92, bottom=0.30)
 
     # Fixed view over the trajectory (and the reference path), with margin.
     margin = 3.0
@@ -306,9 +302,7 @@ def animate_trajectory(
     legend_entries = []
     if reference_path is not None:
         ax.plot(rp[:, 0], rp[:, 1], "k--", lw=1.2, zorder=1)
-        legend_entries.append(
-            (plt.Line2D([], [], color="k", ls="--", lw=1.2), "reference")
-        )
+        legend_entries.append((plt.Line2D([], [], color="k", ls="--", lw=1.2), "reference"))
     if extra_trajectories:
         for label, positions, color in extra_trajectories:
             pts = np.asarray(positions)
@@ -343,18 +337,25 @@ def animate_trajectory(
         )
     if legend_entries:
         artists, labels = zip(*legend_entries, strict=True)
-        ax.legend(list(artists), list(labels), loc="upper right", framealpha=0.9)
+        # Below the axes: the legend never covers the trajectory or the
+        # prediction horizons, whatever the scenario extent.
+        ax.legend(
+            list(artists),
+            list(labels),
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.20),
+            ncol=3,
+            framealpha=0.9,
+        )
     ax.plot(result.x[0], result.y[0], "o", color="tab:green", ms=8)
     hull, heading = _create_vessel_artists(ax)
     # Environment arrows are per-frame when the environment is time-varying.
     env_arrow_anchor = (x_lo - margin + 1.5, y_lo - margin + 1.5)
     env_artists = []
     if not callable(environment):
-        env_artists += _environment_arrows(
-            ax, environment, *env_arrow_anchor, annotate=True
-        )
+        env_artists += environment_arrows(ax, environment, *env_arrow_anchor, annotate=True)
     if not callable(estimated_environment):
-        env_artists += _environment_arrows(
+        env_artists += environment_arrows(
             ax, estimated_environment, *env_arrow_anchor, annotate=True, estimated=True
         )
     info = ax.text(
@@ -374,7 +375,7 @@ def animate_trajectory(
 
     # Per-frame artists.
     (trail_line,) = ax.plot([], [], color="0.35", lw=1.6, zorder=3)
-    wake = ax.scatter([], [], s=14, zorder=2)
+    wake = ax.scatter([], [], s=8, zorder=2)
     (horizon_line,) = ax.plot([], [], color="tab:cyan", lw=1.6, zorder=4)
     (horizon_end,) = ax.plot([], [], "o", color="tab:cyan", ms=5, zorder=4)
     (extra_horizon_line,) = ax.plot([], [], color="tab:purple", lw=1.6, zorder=4)
@@ -382,9 +383,7 @@ def animate_trajectory(
 
     # Horizon shots sorted by time, for per-frame lookup.
     horizon_times = np.array([t for t, _ in horizon]) if horizon else np.empty(0)
-    extra_horizon_times = (
-        np.array([t for t, _ in extra_horizon]) if extra_horizon else np.empty(0)
-    )
+    extra_horizon_times = np.array([t for t, _ in extra_horizon]) if extra_horizon else np.empty(0)
 
     wake_steps = max(1, int(wake_duration / result.dt))
     indices = np.arange(0, result.n_steps + 1, stride)
@@ -398,11 +397,11 @@ def animate_trajectory(
             frame_env = []
             t_now = result.t[i]
             if callable(environment):
-                frame_env += _environment_arrows(
+                frame_env += environment_arrows(
                     ax, environment(t_now), *env_arrow_anchor, annotate=True
                 )
             if callable(estimated_environment):
-                frame_env += _environment_arrows(
+                frame_env += environment_arrows(
                     ax,
                     estimated_environment(t_now),
                     *env_arrow_anchor,
@@ -474,455 +473,3 @@ def animate_trajectory(
         out.parent.mkdir(parents=True, exist_ok=True)
         anim.save(out, writer=animation.PillowWriter(fps=fps), dpi=dpi)
     return anim
-
-
-def plot_reference_trajectories(
-    run: ReferenceRun,
-    output_path: str | os.PathLike[str],
-) -> plt.Figure:
-    """Reference-run trajectory overview: four controllers with horizons.
-
-    Draws the reference path, the four controller trajectories (LOS, nominal
-    NMPC, disturbance-aware NMPC, geometric MPCC), the disturbance-aware
-    NMPC prediction horizons, the MPCC predicted horizon and the true
-    environment sampled at four times along the aware trajectory. Saved to
-    ``output_path`` (the ignored results figure of the reference pipeline).
-
-    Args:
-        run: the in-memory reference run.
-        output_path: PNG destination (parent directories are created).
-
-    Returns:
-        The figure.
-
-    Example:
-        >>> from vessel_gnc.reference import run_reference_scenario
-        >>> from vessel_gnc.visualization import plot_reference_trajectories
-        >>> run = run_reference_scenario()  # doctest: +SKIP  (120 s flagship)
-        >>> figure = plot_reference_trajectories(
-        ...     run, "results/reference/nmpc_trajectory.png"
-        ... )  # doctest: +SKIP
-    """
-    path = run.path
-    los_result = run.los.result
-    nominal_result = run.nmpc.result
-    aware_result = run.disturbance_aware_nmpc.result
-    mpcc_result = (
-        run.disturbance_aware_mpcc.result
-        if run.disturbance_aware_mpcc is not None
-        else None
-    )
-
-    fig, ax = plt.subplots(figsize=(8.0, 6.6))
-    ax.plot(path[:, 0], path[:, 1], "k--", lw=1.2, label="reference path")
-    ax.plot(los_result.x, los_result.y, color="0.6", lw=1.3, label="LOS baseline")
-    ax.plot(
-        nominal_result.x,
-        nominal_result.y,
-        color="tab:blue",
-        lw=1.4,
-        label="nominal NMPC",
-    )
-    ax.plot(
-        aware_result.x,
-        aware_result.y,
-        color="tab:green",
-        lw=1.7,
-        label="disturbance-aware NMPC",
-    )
-    if mpcc_result is not None:
-        ax.plot(
-            mpcc_result.x,
-            mpcc_result.y,
-            color="tab:purple",
-            lw=1.4,
-            label="geometric MPCC",
-        )
-    for _, traj in run.disturbance_aware_nmpc.horizon:
-        ax.plot(traj[0], traj[1], color="tab:cyan", lw=1.0, alpha=0.7)
-    if run.disturbance_aware_mpcc is not None:
-        for _, traj in run.disturbance_aware_mpcc.horizon:
-            ax.plot(traj[0], traj[1], color="tab:purple", lw=1.0, alpha=0.35)
-    ax.plot(
-        aware_result.x[0],
-        aware_result.y[0],
-        "o",
-        color="tab:green",
-        ms=8,
-        label="start",
-    )
-    ax.plot(
-        aware_result.x[-1],
-        aware_result.y[-1],
-        "x",
-        color="tab:red",
-        ms=10,
-        mew=2,
-        label="end (aware NMPC)",
-    )
-
-    # True environment at four times, anchored on the aware-NMPC trajectory.
-    # Use one legend entry per quantity instead of overlapping arrow labels.
-    t = aware_result.t
-    environment_handles: list[tuple] = []
-    for index, shot_t in enumerate(np.linspace(0.0, t[-1], 4)):
-        x0 = float(np.interp(shot_t, t, aware_result.x))
-        y0 = float(np.interp(shot_t, t, aware_result.y))
-        handles = _environment_arrows(
-            ax,
-            run.config.environment.sample(shot_t),
-            x0,
-            y0,
-            annotate=False,
-        )
-        if index == 0:
-            environment_handles = handles
-
-    ax.set_aspect("equal")
-    ax.set_xlabel("x [m] (North)")
-    ax.set_ylabel("y [m] (East)")
-    ax.set_title("LOS vs nominal/aware NMPC and geometric MPCC")
-    plot_handles, plot_labels = ax.get_legend_handles_labels()
-    plot_handles.extend(handle for handle, _ in environment_handles)
-    plot_labels.extend(label for _, label in environment_handles)
-    ax.legend(plot_handles, plot_labels, loc="best", framealpha=0.9)
-    ax.grid(alpha=0.3)
-    fig.tight_layout()
-
-    out = Path(output_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    return fig
-
-
-def plot_controller_comparison(
-    run: ReferenceRun,
-    metrics: dict[str, object],
-    output_path: str | os.PathLike[str],
-) -> plt.Figure:
-    """Deterministic LOS/NMPC/MPCC comparison (tracking, controls, progress).
-
-    Timing is deliberately absent from this figure: wall-clock data lives
-    exclusively in ``benchmark.json`` and the generated benchmark tables.
-    The four panels show the signed cross-track error, the applied surge
-    thrust and yaw moment (with the physical truth-plant actuator bounds)
-    and a metrics table assembled from the deterministic reference metrics,
-    including compact path-progress rows and route completion.
-
-    Args:
-        run: the in-memory reference run.
-        metrics: the ``reference_metrics(run)`` document (controllers only).
-        output_path: PNG destination (parent directories are created).
-
-    Returns:
-        The figure.
-
-    Example:
-        >>> from vessel_gnc.reference import reference_metrics, run_reference_scenario
-        >>> from vessel_gnc.visualization import plot_controller_comparison
-        >>> run = run_reference_scenario()  # doctest: +SKIP  (120 s flagship)
-        >>> figure = plot_controller_comparison(
-        ...     run, reference_metrics(run), "assets/controller_comparison.png"
-        ... )  # doctest: +SKIP
-    """
-    path = run.path
-    los_result = run.los.result
-    nominal_result = run.nmpc.result
-    aware_result = run.disturbance_aware_nmpc.result
-    mpcc_result = (
-        run.disturbance_aware_mpcc.result
-        if run.disturbance_aware_mpcc is not None
-        else None
-    )
-    los_metrics = metrics["controllers"]["los_pid_v1"]
-    nominal_metrics = metrics["controllers"]["nominal_nmpc_v1"]
-    aware_metrics = metrics["controllers"]["disturbance_aware_nmpc_v1"]
-    if run.disturbance_aware_mpcc is not None:
-        mpcc_metrics = metrics["controllers"]["disturbance_aware_mpcc_v1"]
-    _, _, cross_los = project_onto_path(
-        np.column_stack([los_result.x, los_result.y]), path
-    )
-    _, _, cross_nominal = project_onto_path(
-        np.column_stack([nominal_result.x, nominal_result.y]), path
-    )
-    _, _, cross_aware = project_onto_path(
-        np.column_stack([aware_result.x, aware_result.y]), path
-    )
-    cross_mpcc = None
-    if mpcc_result is not None:
-        _, _, cross_mpcc = project_onto_path(
-            np.column_stack([mpcc_result.x, mpcc_result.y]), path
-        )
-    bounds = run.config.truth_params
-
-    fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.2), constrained_layout=True)
-
-    ax = axes[0, 0]
-    ax.plot(los_result.t, cross_los, color="0.6", lw=1.2, label="LOS")
-    ax.plot(
-        nominal_result.t,
-        cross_nominal,
-        color="tab:blue",
-        lw=1.1,
-        label="nominal NMPC",
-    )
-    ax.plot(
-        aware_result.t,
-        cross_aware,
-        color="tab:green",
-        lw=1.2,
-        label="aware NMPC",
-    )
-    if cross_mpcc is not None:
-        ax.plot(
-            mpcc_result.t,
-            cross_mpcc,
-            color="tab:purple",
-            lw=1.2,
-            label="geometric MPCC",
-        )
-    ax.axhline(0.0, color="k", lw=0.8)
-    ax.set_xlabel("t [s]")
-    ax.set_ylabel("cross-track [m]")
-    ax.set_title("Cross-track error (positive = left of path)")
-    ax.legend(loc="best")
-    ax.grid(alpha=0.3)
-
-    ax = axes[0, 1]
-    ax.plot(los_result.t, los_result.thrust, color="0.6", lw=1.0, label="LOS")
-    ax.plot(
-        nominal_result.t,
-        nominal_result.thrust,
-        color="tab:blue",
-        lw=1.0,
-        label="nominal NMPC",
-    )
-    ax.plot(
-        aware_result.t,
-        aware_result.thrust,
-        color="tab:green",
-        lw=1.0,
-        label="aware NMPC",
-    )
-    if mpcc_result is not None:
-        ax.plot(
-            mpcc_result.t,
-            mpcc_result.thrust,
-            color="tab:purple",
-            lw=1.0,
-            label="geometric MPCC",
-        )
-    ax.axhline(bounds.thrust_max, color="r", ls=":", lw=1)
-    ax.axhline(bounds.thrust_min, color="r", ls=":", lw=1)
-    ax.set_xlabel("t [s]")
-    ax.set_ylabel("thrust [N]")
-    ax.set_title("Surge thrust with physical bounds")
-    ax.legend(loc="best")
-    ax.grid(alpha=0.3)
-
-    ax = axes[1, 0]
-    ax.plot(
-        los_result.t,
-        los_result.yaw_moment,
-        color="0.6",
-        lw=1.0,
-        label="LOS",
-    )
-    ax.plot(
-        nominal_result.t,
-        nominal_result.yaw_moment,
-        color="tab:blue",
-        lw=1.0,
-        label="nominal NMPC",
-    )
-    ax.plot(
-        aware_result.t,
-        aware_result.yaw_moment,
-        color="tab:green",
-        lw=1.0,
-        label="aware NMPC",
-    )
-    if mpcc_result is not None:
-        ax.plot(
-            mpcc_result.t,
-            mpcc_result.yaw_moment,
-            color="tab:purple",
-            lw=1.0,
-            label="geometric MPCC",
-        )
-    ax.axhline(bounds.moment_max, color="r", ls=":", lw=1)
-    ax.axhline(bounds.moment_min, color="r", ls=":", lw=1)
-    ax.set_xlabel("t [s]")
-    ax.set_ylabel("yaw moment [N m]")
-    ax.set_title("Yaw moment with physical bounds")
-    ax.legend(loc="best")
-    ax.grid(alpha=0.3)
-
-    ax = axes[1, 1]
-    ax.axis("off")
-    controller_metrics = [los_metrics, nominal_metrics, aware_metrics]
-    if run.disturbance_aware_mpcc is not None:
-        controller_metrics.append(mpcc_metrics)
-    rows = [("", "LOS", "Nominal", "Aware", "MPCC")]
-    rows.append(
-        ("RMS cross-track [m]",)
-        + tuple(f"{m['cross_track_rms_m']:.2f}" for m in controller_metrics)
-    )
-    rows.append(
-        ("Max cross-track [m]",)
-        + tuple(f"{m['cross_track_max_m']:.2f}" for m in controller_metrics)
-    )
-    rows.append(
-        ("RMS heading error [deg]",)
-        + tuple(
-            f"{np.degrees(m['heading_error_rms_rad']):.1f}" for m in controller_metrics
-        )
-    )
-    rows.append(
-        ("Final progress [m]",)
-        + tuple(f"{m['path_progress_final_m']:.1f}" for m in controller_metrics)
-    )
-    rows.append(
-        ("Progress fraction [-]",)
-        + tuple(f"{m['path_progress_fraction']:.3f}" for m in controller_metrics)
-    )
-    rows.append(
-        ("Mean progress rate [m/s]",)
-        + tuple(f"{m['mean_progress_rate_m_s']:.2f}" for m in controller_metrics)
-    )
-    rows.append(
-        ("Route completion [s]",)
-        + tuple(
-            "—" if m["route_completion_s"] is None else f"{m['route_completion_s']:.1f}"
-            for m in controller_metrics
-        )
-    )
-    rows.append(
-        ("RMS thrust [N]",)
-        + tuple(f"{m['thrust_rms_N']:.1f}" for m in controller_metrics)
-    )
-    rows.append(
-        ("Max yaw moment [N m]",)
-        + tuple(f"{m['moment_max_Nm']:.1f}" for m in controller_metrics)
-    )
-    rows.append(
-        ("Any saturation [s]",)
-        + tuple(f"{m['any_saturation_duration_s']:.1f}" for m in controller_metrics)
-    )
-    table = ax.table(
-        cellText=rows,
-        colWidths=[0.33, 0.14, 0.19, 0.17, 0.17],
-        loc="center",
-        cellLoc="center",
-    )
-    table.auto_set_font_size(False)
-    table.set_fontsize(8.5)
-    table.scale(1.0, 1.6)
-    ax.set_title("Comparison (deterministic metrics)")
-
-    out = Path(output_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    return fig
-
-
-def plot_current_estimation(
-    run: ReferenceRun,
-    output_path: str | os.PathLike[str],
-) -> plt.Figure:
-    """Equivalent-current figure from the combined-uncertainty flagship.
-
-    Physical current (solid) and the EKF equivalent-current state (dashed)
-    are shown with their difference after the discarded estimator transient.
-    The difference includes wind/model-mismatch confounders; it is not a
-    standalone current-sensor error. Rendered from the disturbance-aware
-    controller's estimator history so
-    it shares the exact reference scenario and seed of the other assets.
-
-    Args:
-        run: the in-memory reference run.
-        output_path: PNG destination (parent directories are created).
-
-    Returns:
-        The figure.
-
-    Example:
-        >>> from vessel_gnc.reference import run_reference_scenario
-        >>> from vessel_gnc.visualization import plot_current_estimation
-        >>> run = run_reference_scenario()  # doctest: +SKIP  (120 s flagship)
-        >>> figure = plot_current_estimation(
-        ...     run, "assets/current_estimation.png"
-        ... )  # doctest: +SKIP
-    """
-    history = run.disturbance_aware_nmpc.estimator
-    t = history.t
-    true = history.current_true
-    estimate = history.current_estimate
-    transient = run.config.estimator_transient_s
-    error = np.hypot(estimate[:, 0] - true[:, 0], estimate[:, 1] - true[:, 1])
-
-    fig, axes = plt.subplots(
-        3, 1, figsize=(7.2, 7.8), sharex=True, constrained_layout=True
-    )
-
-    ax = axes[0]
-    ax.plot(
-        t,
-        true[:, 0],
-        color="tab:orange",
-        lw=1.4,
-        label="physical current (north)",
-    )
-    ax.plot(
-        t,
-        estimate[:, 0],
-        color="tab:orange",
-        lw=1.2,
-        ls="--",
-        label="EKF equivalent current (north)",
-    )
-    ax.set_ylabel("current-equivalent velocity [m/s]")
-    ax.set_title("Equivalent-current state under combined uncertainty")
-    ax.legend(loc="best", framealpha=0.9)
-    ax.grid(alpha=0.3)
-
-    ax = axes[1]
-    ax.plot(
-        t,
-        true[:, 1],
-        color="tab:blue",
-        lw=1.4,
-        label="physical current (east)",
-    )
-    ax.plot(
-        t,
-        estimate[:, 1],
-        color="tab:blue",
-        lw=1.2,
-        ls="--",
-        label="EKF equivalent current (east)",
-    )
-    ax.set_ylabel("current-equivalent velocity [m/s]")
-    ax.legend(loc="best", framealpha=0.9)
-    ax.grid(alpha=0.3)
-
-    ax = axes[2]
-    ax.plot(t, error, color="0.3", lw=1.4)
-    ax.axvspan(0.0, transient, color="0.85", zorder=0)
-    ax.axvline(
-        transient,
-        color="k",
-        ls=":",
-        lw=1,
-        label=f"transient {transient:.0f} s (excluded)",
-    )
-    ax.set_xlabel("t [s]")
-    ax.set_ylabel("vector difference [m/s]")
-    ax.set_title("Difference from physical current (includes confounders)")
-    ax.legend(loc="best", framealpha=0.9)
-    ax.grid(alpha=0.3)
-
-    out = Path(output_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    return fig

@@ -4,47 +4,23 @@ Default mode (no flags) runs the flagship reference scenario exactly once and
 the separate benchmark workload once, then renders the flagship assets,
 writes the four schema-valid JSON artifacts (``metadata.json`` last so its
 hashes cover the final files and assets) and updates the generated Markdown
-markers. ``--check`` validates schema, config, scenario, source fingerprint
-and artifact hashes without any simulation or benchmark;
-``--verify-determinism`` performs one fresh reference run and compares its
-deterministic metrics with the committed ``metrics.json`` under the
-reproducibility contract: LOS baseline metrics exactly, NMPC, MPCC and
-estimator metrics within ``rtol=1e-6, atol=1e-6`` (IPOPT solves to
-``tol=1e-4`` and its full-precision iterates may differ in the last ulps),
-reporting the worst offending key and deviation on failure.
+markers. ``--check`` validates the committed artifacts without any
+simulation or benchmark; ``--verify-determinism`` performs one fresh
+reference run and compares its deterministic metrics with the committed
+``metrics.json``. The reproducibility and provenance contract (fingerprint
+workflow, comparison tolerances, generation environment) is documented in
+``docs/validation.md``.
 
-Reproducibility contract — canonical generation runs **single-threaded
-BLAS**. Before any NumPy/CasADi import this module pins the OpenBLAS, OMP,
-MKL and NumExpr thread counts to one via ``os.environ.setdefault``. IPOPT
-factorizations (MUMPS) and NumPy reductions are deterministic only when the
-linear-algebra backends do not schedule work across threads: multithreaded
-BLAS can flip the last-ulp IPOPT iterate path and with it the accepted
-status of borderline solves, which breaks the ``rtol=1e-6`` deterministic
-metric contract between generation and ``--verify-determinism``. Pinning is
-a tool-level contract for the canonical artifacts and is intentionally
-*not* applied inside the library package, so library consumers keep control
-of their own thread configuration. The pinning uses ``setdefault`` so an
-explicit caller environment is never overridden.
-
-Provenance semantics: ``config.json``/``benchmark.json`` record the
-``git_commit`` and ``metadata.json`` records the ``dirty`` flag of the
-repository *at generation time*. These honest provenance records are not
-compared against the current checkout (after committing the source, a clean
-checkout reports a new HEAD and ``dirty: false``). The authoritative
-consistency check is the *content* source fingerprint — ordered source paths
-plus combined SHA-256 — which changes if and only if a source file appears,
-disappears or changes content. Workflow: commit the source first, then
-regenerate the artifacts; or keep the source contents unchanged. ``--check``
-then passes in any clean checkout whose source tree matches the fingerprint,
-and fails whenever a scenario/parameter/source change is not reflected in
-the committed artifacts.
-
-Exact determinism is guaranteed only within the software environment
-recorded in ``results/reference/metadata.json`` (``software`` block): the
-committed artifacts must be generated with a supported Python (``>=3.12``,
-pyproject.toml) and a fresh ``--verify-determinism`` in that same
-environment. Regenerating in any other environment invalidates the exact
-comparison until a new determinism run confirms it.
+Canonical generation runs **single-threaded BLAS**: before any NumPy/CasADi
+import this module pins the OpenBLAS, OMP, MKL and NumExpr thread counts to
+one via ``os.environ.setdefault``. IPOPT factorizations (MUMPS) and NumPy
+reductions are deterministic only when the linear-algebra backends do not
+schedule work across threads — multithreaded BLAS can flip the last-ulp
+IPOPT iterate path and with it the accepted status of borderline solves,
+breaking the deterministic metric contract. The pinning is a tool-level
+contract for the canonical artifacts and is intentionally *not* applied
+inside the library package; ``setdefault`` keeps an explicit caller
+environment intact.
 
 Run from the repository root:
 
@@ -74,10 +50,10 @@ from vessel_gnc.reference import run_reference_scenario
 from vessel_gnc.reference_artifacts import (
     check_reference_consistency,
     render_reference_assets,
-    update_generated_markdown,
     verify_reference_determinism,
     write_reference_json,
 )
+from vessel_gnc.reference_markdown import update_generated_markdown
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_DIR = REPO_ROOT / "results" / "reference"
@@ -158,10 +134,7 @@ def _generate_default() -> None:
     update_generated_markdown(REPO_ROOT)
     for path in rendered:
         print(f"wrote {path}")
-    print(
-        "wrote results/reference/{config,metrics,benchmark,metadata}.json "
-        "(metadata hashes last)"
-    )
+    print("wrote results/reference/{config,metrics,benchmark,metadata}.json (metadata hashes last)")
 
 
 def _run_benchmarks() -> dict[str, object]:
