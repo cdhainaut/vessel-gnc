@@ -378,9 +378,9 @@ Automated in `tests/test_nmpc.py`:
 
 ## 6. Flagship reference metrics
 
-The flagship scenario (`scenario_v2_disturbance_aware`, revision 1,
-seed 42) runs LOS, nominal NMPC and disturbance-aware NMPC closed loop on
-EKF estimates for 120.0 s at
+The flagship scenario (`scenario_v3_mpcc`, revision 1,
+seed 42) runs LOS, nominal NMPC, disturbance-aware NMPC and geometric MPCC
+closed loop on EKF estimates for 120.0 s at
 0.01 s integration (controller periods 0.1 s / 0.2 s). The plant uses the
 perturbed truth parameters behind the rate-limited actuator; the environment
 is the rotating current with gusts. The metrics are computed from the

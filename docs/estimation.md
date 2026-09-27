@@ -109,9 +109,9 @@ Automated in `tests/test_ekf.py`:
 | Physical-current estimation | Exact nominal plant/filter, rotating current, no wind, 120 s | Post-transient RMS current error < 60 mm/s (seed 7) |
 | Combined-uncertainty tracking | LOS + PID on EKF estimates, current + wind unknown, 120 s | RMS position error < 3 m, max < 6 m |
 
-The flagship scenario (`scenario_v2_disturbance_aware`, revision 1,
-seed 42) records the callback-aligned EKF estimates of the NMPC reference
-disturbance-aware run. The deterministic estimator errors below are formatted from
+The flagship scenario (`scenario_v3_mpcc`, revision 1,
+seed 42) records the callback-aligned EKF estimates of the disturbance-aware
+reference runs. The deterministic estimator errors below are formatted from
 `results/reference/metrics.json`; current-vector statistics discard the
 explicit 20.0 s transient.
 

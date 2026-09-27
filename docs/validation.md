@@ -56,7 +56,7 @@ Status legend:
 | Actuator bounds respected, straight-line tracking | verified | `tests/test_nmpc.py` |
 | S-curve regression with unknown current/wind | validated | `tests/test_nmpc.py` |
 | Solve-time budget, determinism, warm-start shift | verified | `tests/test_nmpc.py` |
-| Flagship LOS vs nominal/aware NMPC, EKF in the loop | validated | `results/reference/metrics.json` (scenario `scenario_v2_disturbance_aware`) |
+| Flagship LOS vs nominal/aware NMPC and MPCC, EKF in the loop | validated | `results/reference/metrics.json` (scenario `scenario_v3_mpcc`) |
 
 ## Smooth path geometry and geometric MPCC (Milestone 5)
 
@@ -106,11 +106,11 @@ metrics.
 <!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **493.7 ns/step** |
-| 1000 s simulation (Python loop) | **346 ms** |
-| Nominal NMPC mean / median / p95 / max [ms] | **20.1 / 19.3 / 26.9 / 33.8** |
-| Disturbance-aware NMPC mean / median / p95 / max [ms] | **16.7 / 15.6 / 22.0 / 27.2** |
-| Disturbance-aware MPCC mean / median / p95 / max [ms] | **27.5 / 26.2 / 33.4 / 70.4** |
+| C++ RK4 propagation (vessel + actuator) | **739.9 ns/step** |
+| 1000 s simulation (Python loop) | **568 ms** |
+| Nominal NMPC mean / median / p95 / max [ms] | **32.4 / 30.3 / 45.1 / 87.2** |
+| Disturbance-aware NMPC mean / median / p95 / max [ms] | **36.3 / 35.6 / 50.1 / 71.7** |
+| Disturbance-aware MPCC mean / median / p95 / max [ms] | **73.6 / 68.8 / 107.7 / 161.3** |
 
 Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v3`, 900 predictive solves, 0 failed). Per-workload status histograms: Nominal NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware MPCC: 300 samples, 0 failed, Solve_Succeeded=300. The 5 Hz control period defines a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
 
@@ -133,10 +133,44 @@ Scenario, seed, configuration, source revision and fingerprint:
 | Schema | `results/reference/reference.schema.json` (version 3) |
 | Deterministic metrics | `results/reference/metrics.json` |
 | Machine-dependent benchmark | `results/reference/benchmark.json` |
-| Generated at (UTC) | 2026-08-16T20:46:31+00:00 |
-| Source commit | `5796fdcfa726f4359d0b4e43e9d03ecfe54c3e61` |
-| Source fingerprint | dirty: true · `4988f887eef5f91ce6cfb2424bb15dc73c7d351317fb00a351f664e1e5981c5d` |
+| Generated at (UTC) | 2026-09-27T17:21:36+00:00 |
+| Source commit | `3ed5a9fe36fd5eff3cc824b1ff9a338a328ebf7a` |
+| Source fingerprint | dirty: true · `478ad5df66aeabd4f7ff6eacd2df46c1e1f1415daa72278887e23815e6dc2497` |
 
-`git_commit` and the `dirty` flag record the repository state at generation time; the source fingerprint is content-based and authoritative. After committing source changes, either regenerate the artifacts (`python tools/generate_reference_results.py`) or keep the source contents unchanged: `--check` compares only the content fingerprint, so a clean checkout at a new commit passes when the source contents are unchanged and fails when they changed. `--check` validates schema, scenario, source fingerprint, artifact hashes and marker bodies without any simulation; `--verify-determinism` runs one fresh 120 s reference and compares it with `results/reference/metrics.json`: the LOS baseline metrics exactly, and both NMPC variants, MPCC plus estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves to `tol=1e-4`, so its full-precision iterates may differ in the last ulps), reporting the worst offending key and deviation on failure. Reproducibility is guaranteed within the software environment recorded in `metadata.json` (`software` block): regenerating in another environment requires a fresh `--verify-determinism` in that environment before the committed metrics can be trusted.
+Provenance rows are generation-time records; the content-based source fingerprint is the authoritative consistency check. The full reproducibility contract and the metric definitions live in the validation documentation.
 
 <!-- generated:reference-provenance-v1:end -->
+
+## Reproducibility contract
+
+`git_commit` and the `dirty` flag record the repository state at generation
+time; the authoritative consistency check is the content-based source
+fingerprint (ordered source paths plus combined SHA-256). It changes if and
+only if a source input changes: commit source changes first, then regenerate
+the artifacts (`python tools/generate_reference_results.py`), or keep the
+source contents unchanged. `--check` then passes in any clean checkout whose
+source tree matches the fingerprint and fails whenever a scenario, parameter
+or source change is not reflected in the committed artifacts; it validates
+schema, scenario, source fingerprint, artifact hashes and marker bodies
+without any simulation.
+
+`--verify-determinism` runs one fresh 120 s reference and compares it with
+`results/reference/metrics.json`: the LOS baseline metrics exactly, and the
+NMPC, MPCC and estimator metrics within `rtol=1e-6, atol=1e-6` (IPOPT solves
+to `tol=1e-4`, so its full-precision iterates may differ in the last ulps),
+reporting the worst offending key and deviation on failure. Reproducibility
+is guaranteed within the software environment recorded in `metadata.json`
+(`software` block): regenerating in another environment requires a fresh
+`--verify-determinism` in that environment before the committed metrics can
+be trusted.
+
+## Metric definitions
+
+Saturation duration (`metrics.json`): for each left-closed simulation
+interval `[t_k, t_{k+1})` an actuator channel is saturated when its applied
+value lies within `1 - saturation_threshold` (default 1 %) of that channel's
+full `ModelParams` bound span from either bound, i.e. it reaches at least
+99 % of the span from the nearer bound. The duration is the number of
+flagged intervals multiplied by the integration step; the final sample
+bounds no interval. Thrust, yaw moment and their union (no double counting)
+are reported separately.
