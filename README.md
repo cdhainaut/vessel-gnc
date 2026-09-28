@@ -1,12 +1,18 @@
 # Vessel-GNC
 
+by [Charles Dhainaut](https://github.com/cdhainaut)
+
 [![CI](https://img.shields.io/github/actions/workflow/status/cdhainaut/vessel-gnc/ci.yml?label=build%20%26%20tests)](https://github.com/cdhainaut/vessel-gnc/actions)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](pyproject.toml)
 [![C++20](https://img.shields.io/badge/c%2B%2B-20-blue.svg)](CMakeLists.txt)
 
-C++/Python simulation, estimation and nonlinear control for autonomous
-surface vessels.
+**A compact C++/Python stack to simulate, estimate and optimally control
+autonomous surface vessels, end to end.** A 3-DOF vessel model (C++20
+kernel) runs behind an EKF, LOS/PID baselines and CasADi-based predictive
+controllers; **a 200 m reference path is tracked to 0.23 m RMS cross-track
+error in unknown current and wind gusts**, and every number in this README
+is regenerated from committed reference artifacts.
 
 ![Hero: disturbance-aware NMPC with predicted horizon](assets/hero.gif)
 
@@ -16,7 +22,45 @@ controller. The vessel is controlled from EKF estimates of noisy sensors;
 the cyan lines are the disturbance-aware NMPC's 10 s predictions, re-solved
 at 5 Hz.*
 
-**3-DOF dynamics · EKF · LOS/PID · disturbance-aware NMPC · C++20 · CasADi**
+**3-DOF dynamics · EKF · LOS/PID · disturbance-aware NMPC · geometric MPCC · C++20 · CasADi**
+
+## Quickstart
+
+```bash
+pip install -e .        # builds the C++ core via CMake (scikit-build-core)
+```
+
+Close the loop on a 200 m S-curve with the contouring controller, in a
+current the controller knows nothing about:
+
+```python
+from vessel_gnc import _core, make_s_curve_geometry, simulate, VesselMpcc
+from vessel_gnc.metrics import path_following_metrics
+
+path = make_s_curve_geometry()                     # 200 m S-curve reference
+mpcc = VesselMpcc(_core.default_params(), path)    # geometric contouring MPC
+command, actuator = _core.Control(), _core.ActuatorState()
+
+def pilot(t, state):
+    """Closes the loop at 5 Hz: actuator lag first, then one MPCC solve."""
+    global command, actuator
+    actuator = _core.actuator_step(actuator, command, _core.default_params(), 0.2)
+    command = mpcc.solve(state, actuator, u_prev=command)
+    return command
+
+result = simulate(60.0, 0.01, control=pilot, control_period=0.2,
+                  environment=_core.Environment(current_east=0.15))
+
+metrics = path_following_metrics(result, path, lookahead=8.0)
+print(f"RMS cross-track error: {metrics['cross_track_rms_m']:.2f} m")
+```
+
+```text
+RMS cross-track error: 0.41 m
+```
+
+The same chain, with the EKF in the loop and all four controllers compared
+on the flagship scenario, is `python examples/05_nmpc_demo.py`.
 
 ## Measured performance
 
@@ -248,6 +292,58 @@ cmake -B build -DVESSEL_GNC_BUILD_BENCHMARKS=ON && cmake --build build
 - `docs/estimation.md`: augmented EKF formulation (vessel + current),
   sensor model and the disturbance-estimation validation.
 - `docs/validation.md`: the full validation record.
+
+## Status
+
+Everything in the demo above is reproduced from committed artifacts, and
+every validation case is listed with its test in `docs/validation.md`.
+What I trust: the numerics (analytical and convergence checks), the
+solver-independent parts of the chain, and the deterministic metrics. What
+I do not claim: the parameter values are illustrative for a ~1.5 m, 30 kg
+USV and are not fitted to a real hull, so treat the dynamics as credible
+rather than validated for a specific vessel. Monte-Carlo robustness and a
+coastal environment are future work, and I would rather document that than
+fake it.
+
+## FAQ
+
+**Why both C++ and Python?**
+
+> The simulation kernel (dynamics, RK4, actuator, baseline controllers) is
+> C++ because it runs millions of steps in benchmarks and closed-loop
+> sweeps, and because a compiled kernel is easy to cross-validate. The
+> CasADi model the predictive controllers use is an *independent*
+> implementation of the same equations, tested against the C++ kernel to
+> 1e-8 on every CI run. The research layer (EKF, NMPC, MPCC, figures) is
+> Python because that is where CasADi and Matplotlib live. When the two
+> implementations disagree, the tests say which one drifted.
+
+**Why not just use ArduPilot or PX4?**
+
+> Those are autopilots: hardware abstraction, sensor drivers, embedded
+> engineering. This is a control laboratory instead. One vessel, one
+> estimator, four controllers, and every equation in a file you can read in
+> an afternoon. The point is not to fly a mission; it is to be able to say
+> exactly why the disturbance-aware NMPC cuts RMS cross-track error from
+> 0.41 m to 0.23 m, and to have that number reproduced from a committed
+> artifact rather than from my memory of a good run.
+
+**Is the vessel model realistic?**
+
+> It is a Fossen-style 3-DOF model with illustrative parameters (a ~1.5 m,
+> 30 kg USV, order-of-magnitude only). What is validated here is the
+> numerics and the control chain, not the fidelity to a specific hull. The
+> parameters are plain dataclasses and every modelling assumption is
+> written down in `docs/model.md`, including what is neglected.
+
+**Why do the numbers live in committed JSON artifacts?**
+
+> Because a portfolio project whose numbers cannot be reproduced is
+> decoration. The metrics, the benchmark timings and the figures are all
+> generated by one tool from one reference run, and `--verify-determinism`
+> re-runs the flagship from scratch and checks it against the committed
+> metrics. Wall-clock numbers stay separate from deterministic ones, on
+> purpose.
 
 ## Roadmap
 
