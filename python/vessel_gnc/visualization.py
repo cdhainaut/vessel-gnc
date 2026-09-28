@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import animation
+from matplotlib.collections import LineCollection
 from matplotlib.patches import Polygon
 from matplotlib.transforms import Affine2D
 
@@ -68,7 +69,7 @@ def _create_vessel_artists(ax, scale: float = 1.0):
     hull = Polygon(
         scale * HULL,
         closed=True,
-        facecolor="0.25",
+        facecolor="white",
         edgecolor="black",
         lw=1.0,
         zorder=5,
@@ -90,58 +91,70 @@ def environment_arrows(
     y0: float,
     annotate: bool = False,
     estimated: bool = False,
-) -> list[tuple]:
+) -> tuple[list, list[tuple]]:
     """Draw current/wind arrows anchored at ``(x0, y0)`` in data coordinates.
 
     Arrows are magnitude-scaled for visibility; the true values are reported
     either as legend handles (``annotate=False``) or as text next to each
-    arrow (``annotate=True``). The wind arrow is anchored 1.5 m north of the
-    current arrow so the two never overlap when they point in the same
-    direction. With ``estimated=True`` the arrow is dashed and labelled as
-    the EKF equivalent-current state used in the combined-uncertainty
-    flagship. Zero components are skipped.
+    arrow (``annotate=True``). The wind arrow is anchored 3.5 m north of the
+    current arrow so the arrows and their labels never overlap. With
+    ``estimated=True`` the arrow is dashed and labelled as the EKF
+    equivalent-current state used in the combined-uncertainty flagship.
+    Zero components are skipped.
+
+    Returns:
+        ``(artists, handles)``: the drawn artists (so per-frame callers can
+        remove them again) and ``(line, label)`` legend handles.
     """
     linestyle = "--" if estimated else "-"
+    artists: list = []
     handles: list[tuple] = []
     if environment is None:
-        return handles
+        return artists, handles
 
     if environment.current_north != 0.0 or environment.current_east != 0.0:
         vn, ve = environment.current_north, environment.current_east
         scale = 10.0  # m of arrow per m/s of current
         tip = (x0 + scale * vn, y0 + scale * ve)
-        ax.annotate(
-            "",
-            xy=tip,
-            xytext=(x0, y0),
-            arrowprops=dict(arrowstyle="->", color="tab:blue", lw=2, linestyle=linestyle),
-            zorder=5,
+        artists.append(
+            ax.annotate(
+                "",
+                xy=tip,
+                xytext=(x0, y0),
+                arrowprops=dict(arrowstyle="->", color="tab:blue", lw=2, linestyle=linestyle),
+                zorder=5,
+            )
         )
         quantity = "equiv. current (EKF)" if estimated else "physical current"
         label = f"{quantity} ({np.hypot(vn, ve):.2f} m/s)"
         handles.append((plt.Line2D([], [], color="tab:blue", lw=2, ls=linestyle), label))
         if annotate:
-            ax.text(tip[0] + 0.2, tip[1] + 0.2, label, fontsize=8, color="tab:blue")
+            artists.append(ax.text(tip[0] + 0.2, tip[1] + 0.2, label, fontsize=8, color="tab:blue"))
 
     if environment.wind_north != 0.0 or environment.wind_east != 0.0:
         wn, we = environment.wind_north, environment.wind_east
         scale = 0.2  # m of arrow per N of wind force
         # Offset anchor so the wind arrow never overlaps the current arrow.
-        y_wind = y0 + 1.5
+        y_wind = y0 + 3.5
         tip = (x0 + scale * wn, y_wind + scale * we)
-        ax.annotate(
-            "",
-            xy=tip,
-            xytext=(x0, y_wind),
-            arrowprops=dict(arrowstyle="->", color="tab:orange", lw=2),
-            zorder=5,
+        artists.append(
+            ax.annotate(
+                "",
+                xy=tip,
+                xytext=(x0, y_wind),
+                arrowprops=dict(arrowstyle="->", color="tab:orange", lw=2),
+                zorder=5,
+            )
         )
-        label = f"wind ({np.hypot(wn, we):.0f} N)"
+        quantity = "equiv. wind (EKF)" if estimated else "wind"
+        label = f"{quantity} ({np.hypot(wn, we):.0f} N)"
         handles.append((plt.Line2D([], [], color="tab:orange", lw=2), label))
         if annotate:
-            ax.text(tip[0] + 0.2, tip[1] + 0.2, label, fontsize=8, color="tab:orange")
+            artists.append(
+                ax.text(tip[0] + 0.2, tip[1] + 0.2, label, fontsize=8, color="tab:orange")
+            )
 
-    return handles
+    return artists, handles
 
 
 def plot_trajectory(
@@ -196,7 +209,8 @@ def plot_trajectory(
 
     # Environment arrows (with legend entries carrying the true values).
     handles = [(start_line, "start"), (end_line, "end")]
-    handles += environment_arrows(ax, environment, result.x[0], result.y[0])
+    _, arrow_handles = environment_arrows(ax, environment, result.x[0], result.y[0])
+    handles += arrow_handles
     if handles:
         artists, labels = zip(*handles, strict=True)
         ax.legend(list(artists), list(labels), loc="best", framealpha=0.9)
@@ -231,8 +245,8 @@ def animate_trajectory(
 ) -> animation.FuncAnimation:
     """Render a top-down animation of the vessel along the trajectory.
 
-    Scene: hull outline with heading line, past trajectory (faint full path,
-    brighter trail), a fading speed-coloured wake, environment arrows and a
+    Scene: white hull with heading line, the travelled trail with a
+    speed-coloured wake ribbon, environment arrows and a
     time/speed/heading overlay. With ``reference_path`` and ``horizon`` the
     scene becomes the flagship demo: the reference path is drawn dashed and
     the predictive horizon is shown ahead of the vessel, taken from the
@@ -257,7 +271,7 @@ def animate_trajectory(
         stride: display one sample every ``stride`` integration steps
             (frame period = ``dt * stride``).
         fps: GIF frame rate.
-        wake_duration: length of the fading wake trail [s].
+        wake_duration: length of the speed-coloured wake ribbon [s].
         dpi: GIF resolution.
         reference_path: (M, 2) waypoints drawn as the reference path.
         horizon: recorded predictive predictions, shown per frame.
@@ -298,7 +312,6 @@ def animate_trajectory(
     ax.set_ylim(y_lo - margin, y_hi + margin)
 
     # Static elements.
-    (path_line,) = ax.plot(result.x, result.y, color="0.65", lw=0.8, zorder=1)
     legend_entries = []
     if reference_path is not None:
         ax.plot(rp[:, 0], rp[:, 1], "k--", lw=1.2, zorder=1)
@@ -306,7 +319,7 @@ def animate_trajectory(
     if extra_trajectories:
         for label, positions, color in extra_trajectories:
             pts = np.asarray(positions)
-            ax.plot(pts[:, 0], pts[:, 1], color=color, lw=1.1, alpha=0.85, zorder=2)
+            ax.plot(pts[:, 0], pts[:, 1], color=color, lw=1.0, alpha=0.55, zorder=2)
             legend_entries.append(
                 (
                     plt.Line2D(
@@ -348,16 +361,22 @@ def animate_trajectory(
             framealpha=0.9,
         )
     ax.plot(result.x[0], result.y[0], "o", color="tab:green", ms=8)
-    hull, heading = _create_vessel_artists(ax)
-    # Environment arrows are per-frame when the environment is time-varying.
-    env_arrow_anchor = (x_lo - margin + 1.5, y_lo - margin + 1.5)
+    hull, heading = _create_vessel_artists(ax, scale=1.25)
+    # Environment arrows live in the free corner opposite the path start:
+    # anchoring them at the start piled arrows and labels onto the early
+    # trajectory. The estimated group sits north of the true group so the
+    # two never overlap.
+    env_arrow_anchor = (x_hi + margin - 32.0, y_lo - margin + 1.5)
+    estimated_env_anchor = (x_hi + margin - 32.0, y_lo - margin + 8.5)
     env_artists = []
     if not callable(environment):
-        env_artists += environment_arrows(ax, environment, *env_arrow_anchor, annotate=True)
+        static_artists, _ = environment_arrows(ax, environment, *env_arrow_anchor, annotate=True)
+        env_artists += static_artists
     if not callable(estimated_environment):
-        env_artists += environment_arrows(
-            ax, estimated_environment, *env_arrow_anchor, annotate=True, estimated=True
+        static_artists, _ = environment_arrows(
+            ax, estimated_environment, *estimated_env_anchor, annotate=True, estimated=True
         )
+        env_artists += static_artists
     info = ax.text(
         0.02,
         0.97,
@@ -373,9 +392,12 @@ def animate_trajectory(
     ax.set_ylabel("y [m] (East)")
     ax.set_title(title)
 
-    # Per-frame artists.
-    (trail_line,) = ax.plot([], [], color="0.35", lw=1.6, zorder=3)
-    wake = ax.scatter([], [], s=8, zorder=2)
+    # Per-frame artists. The recent trail is a speed-coloured ribbon; the
+    # full taken path is already drawn as the controller track, so no
+    # separate trail line duplicates it.
+    wake = LineCollection([], cmap="viridis", lw=1.8, alpha=0.85, zorder=3)
+    wake.set_clim(speed.min(), speed.max())
+    ax.add_collection(wake)
     (horizon_line,) = ax.plot([], [], color="tab:cyan", lw=1.6, zorder=4)
     (horizon_end,) = ax.plot([], [], "o", color="tab:cyan", ms=5, zorder=4)
     (extra_horizon_line,) = ax.plot([], [], color="tab:purple", lw=1.6, zorder=4)
@@ -389,37 +411,35 @@ def animate_trajectory(
     indices = np.arange(0, result.n_steps + 1, stride)
 
     def update(frame: int) -> tuple:
+        nonlocal env_artists
         i = int(indices[frame])
-        frame_env = env_artists
         if callable(environment) or callable(estimated_environment):
+            # Per-frame environment: replace the previous arrows in place.
             for artist in env_artists:
                 artist.remove()
-            frame_env = []
+            env_artists = []
             t_now = result.t[i]
             if callable(environment):
-                frame_env += environment_arrows(
+                frame_artists, _ = environment_arrows(
                     ax, environment(t_now), *env_arrow_anchor, annotate=True
                 )
+                env_artists += frame_artists
             if callable(estimated_environment):
-                frame_env += environment_arrows(
+                frame_artists, _ = environment_arrows(
                     ax,
                     estimated_environment(t_now),
-                    *env_arrow_anchor,
+                    *estimated_env_anchor,
                     annotate=True,
                     estimated=True,
                 )
-        trail_line.set_data(result.x[:i], result.y[:i])
-
+                env_artists += frame_artists
         j0 = max(0, i - wake_steps)
-        xw, yw = result.x[j0:i], result.y[j0:i]
-        if len(xw) > 1:
-            age = np.arange(len(xw), dtype=float) / (len(xw) - 1)
-            colors = plt.cm.viridis(0.3 + 0.7 * age)  # old = dark, recent = bright
-            colors[:, 3] = 0.15 + 0.6 * age
-            wake.set_offsets(np.column_stack([xw, yw]))
-            wake.set_facecolors(colors)
+        wake_points = np.column_stack([result.x[j0:i], result.y[j0:i]])
+        if len(wake_points) > 1:
+            wake.set_segments(np.stack([wake_points[:-1], wake_points[1:]], axis=1))
+            wake.set_array(speed[j0 : i - 1])
         else:
-            wake.set_offsets(np.empty((0, 2)))
+            wake.set_segments([])
 
         if horizon:
             # Nearest recorded prediction not later than the frame time.
@@ -454,7 +474,6 @@ def animate_trajectory(
             + f"psi = {np.degrees(result.psi[i]):6.1f} deg"
         )
         return (
-            trail_line,
             wake,
             hull,
             heading,
