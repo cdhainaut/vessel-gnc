@@ -106,11 +106,11 @@ metrics.
 <!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **579.6 ns/step** |
-| 1000 s simulation (Python loop) | **582 ms** |
-| Nominal NMPC mean / median / p95 / max [ms] | **26.0 / 23.6 / 43.9 / 69.0** |
-| Disturbance-aware NMPC mean / median / p95 / max [ms] | **21.7 / 20.3 / 29.5 / 48.7** |
-| Disturbance-aware MPCC mean / median / p95 / max [ms] | **37.8 / 33.4 / 61.9 / 156.4** |
+| C++ RK4 propagation (vessel + actuator) | **494.7 ns/step** |
+| 1000 s simulation (Python loop) | **373 ms** |
+| Nominal NMPC mean / median / p95 / max [ms] | **22.4 / 21.8 / 29.5 / 63.5** |
+| Disturbance-aware NMPC mean / median / p95 / max [ms] | **21.1 / 20.1 / 28.1 / 39.1** |
+| Disturbance-aware MPCC mean / median / p95 / max [ms] | **39.8 / 34.7 / 72.3 / 107.4** |
 
 Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v3`, 900 predictive solves, 0 failed). Per-workload status histograms: Nominal NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware MPCC: 300 samples, 0 failed, Solve_Succeeded=300. The 5 Hz control period defines a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
 
@@ -133,9 +133,9 @@ Scenario, seed, configuration, source revision and fingerprint:
 | Schema | `results/reference/reference.schema.json` (version 3) |
 | Deterministic metrics | `results/reference/metrics.json` |
 | Machine-dependent benchmark | `results/reference/benchmark.json` |
-| Generated at (UTC) | 2026-09-28T18:03:58+00:00 |
-| Source commit | `d140d80ec717edb12682e8d5f2bf2c9eca735ac4` |
-| Source fingerprint | dirty: true · `ea654dff51fb86b4c8fe06e9b837f687e39d3001c9135e32d2134841d47c30e7` |
+| Generated at (UTC) | 2026-09-28T19:10:50+00:00 |
+| Source commit | `afd34c839b2868381d26678ea083fdd7ccef9b72` |
+| Source fingerprint | dirty: true · `b27d6bcb3a6512cd10af41a308458ee4573f1e4a5f21f83b02d99ac6183f653c` |
 
 Provenance rows are generation-time records; the content-based source fingerprint is the authoritative consistency check. The full reproducibility contract and the metric definitions live in the validation documentation.
 
