@@ -1,7 +1,7 @@
 {
   "$schema": "results/reference/reference.schema.json",
   "artifact_type": "config",
-  "git_commit": "dec0802642417ed3b5f1eaf86f131926fdc591c5",
+  "git_commit": "21d6c7501096755989ad447996980f5da431f128",
   "scenario": {
     "components": {
       "controller_disturbance_aware_mpcc": "disturbance_aware_mpcc_v1",
