@@ -397,22 +397,22 @@ solve times are machine-dependent and reported only in the benchmark table.
 <!-- generated:reference-controller-comparison-v1:start -->
 | Metric | LOS (PID/PI) | Nominal NMPC | Aware NMPC | Aware MPCC |
 |---|---:|---:|---:|---:|
-| RMS cross-track error [m] | 0.69 | 0.41 | 0.23 | 0.25 |
-| P95 cross-track error [m] | 0.98 | 0.65 | 0.53 | 0.61 |
-| Max cross-track error [m] | 1.07 | 0.74 | 0.63 | 0.71 |
-| RMS wrapped heading error [deg] | 7.1 | 10.5 | 11.2 | 9.8 |
-| Max wrapped heading error [deg] | 20.4 | 27.7 | 31.7 | 29.1 |
-| Final path progress [m] | 154.9 | 156.2 | 156.1 | 164.2 |
-| Final path progress fraction [-] | 0.774 | 0.781 | 0.780 | 0.821 |
-| Mean progress rate [m/s] | 1.29 | 1.30 | 1.30 | 1.37 |
+| RMS cross-track error [m] | 1.00 | 0.63 | 0.33 | 0.33 |
+| P95 cross-track error [m] | 1.77 | 1.17 | 0.72 | 0.63 |
+| Max cross-track error [m] | 1.89 | 1.28 | 0.88 | 1.06 |
+| RMS wrapped heading error [deg] | 6.5 | 9.7 | 11.5 | 11.1 |
+| Max wrapped heading error [deg] | 17.4 | 23.8 | 28.9 | 28.9 |
+| Final path progress [m] | 149.3 | 156.2 | 156.1 | 159.6 |
+| Final path progress fraction [-] | 0.746 | 0.781 | 0.780 | 0.797 |
+| Mean progress rate [m/s] | 1.24 | 1.30 | 1.30 | 1.33 |
 | Route completion [s] | — | — | — | — |
-| RMS applied thrust [N] | 31.8 | 33.7 | 33.5 | 36.6 |
-| Max applied thrust [N] | 38.5 | 59.2 | 59.1 | 43.1 |
-| RMS applied yaw moment [N m] | 1.5 | 2.2 | 2.5 | 2.3 |
-| Max applied yaw moment [N m] | 3.9 | 6.0 | 6.0 | 6.0 |
-| Thrust saturation duration [s] | 0.0 | 0.1 | 0.0 | 0.0 |
-| Yaw-moment saturation duration [s] | 0.0 | 2.4 | 1.7 | 2.3 |
-| Either channel saturated [s] | 0.0 | 2.5 | 1.7 | 2.3 |
+| RMS applied thrust [N] | 32.8 | 36.4 | 35.9 | 36.9 |
+| Max applied thrust [N] | 40.0 | 59.6 | 58.6 | 44.0 |
+| RMS applied yaw moment [N m] | 1.3 | 2.1 | 2.5 | 2.3 |
+| Max applied yaw moment [N m] | 3.4 | 5.9 | 6.0 | 6.0 |
+| Thrust saturation duration [s] | 0.0 | 1.2 | 0.0 | 0.0 |
+| Yaw-moment saturation duration [s] | 0.0 | 1.2 | 2.3 | 2.1 |
+| Either channel saturated [s] | 0.0 | 2.5 | 2.3 | 2.1 |
 
 Deterministic flagship metrics formatted from `results/reference/metrics.json` (scenario `scenario_v3_mpcc`, revision 1, seed 42, 120.0 s at 0.01 s integration). Route completion is the first sample at 99% of total chord progress; an incomplete route is shown as —. Saturation counts left-closed intervals whose applied value lies within 1% of a `ModelParams` bound span (docs/validation.md). No wall-clock timing appears here: predictive solve times are machine-dependent and reported separately in the benchmark table.
 

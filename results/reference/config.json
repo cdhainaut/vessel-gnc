@@ -1,7 +1,7 @@
 {
   "$schema": "results/reference/reference.schema.json",
   "artifact_type": "config",
-  "git_commit": "ef2d7847d308e027f9ec251640d6a2f9355290b9",
+  "git_commit": "d140d80ec717edb12682e8d5f2bf2c9eca735ac4",
   "scenario": {
     "components": {
       "controller_disturbance_aware_mpcc": "disturbance_aware_mpcc_v1",
@@ -18,13 +18,17 @@
       "mpcc_s": 0.2,
       "nmpc_s": 0.2
     },
-    "description": "Flagship reference scenario: one smooth S-curve geometry with LOS, nominal NMPC, disturbance-aware NMPC and disturbance-aware geometric MPCC. All run on matched EKF estimates under a rotating current, gusts and a perturbed truth plant; aware predictors hold the EKF equivalent-current estimate constant over their horizon.",
+    "description": "Flagship reference scenario: one smooth S-curve geometry with LOS, nominal NMPC, disturbance-aware NMPC and disturbance-aware geometric MPCC. All run on matched EKF estimates under a rotating base current, a Rankine eddy, gusts and a perturbed truth plant; aware predictors hold the EKF equivalent-current estimate constant over their horizon.",
     "duration_s": 120.0,
     "environment": {
       "current_amplitude_m_s": 0.06,
       "current_base_east_m_s": 0.12,
       "current_period_s": 80.0,
       "current_phase_rad": 0.0,
+      "eddy_east_m": 25.0,
+      "eddy_north_m": 60.0,
+      "eddy_peak_m_s": 0.25,
+      "eddy_radius_m": 35.0,
       "gust_peak_N": 4.0,
       "gust_times_s": [
         40.0,
@@ -186,6 +190,7 @@
     "render": {
       "fps": 12,
       "hero_stride_frames": 80,
+      "hero_view_width_m": 90.0,
       "hero_wake_duration_s": 12.0,
       "horizon_shot_times_s": [
         20.0,
@@ -206,6 +211,7 @@
       "speed_period_s": 0.1,
       "speed_sigma_m_s": 0.05
     },
+    "track_tolerance_m": 1.0,
     "truth_params": {
       "added_inertia_z_kg_m2": 2.3,
       "added_mass_x_kg": 5.5,
