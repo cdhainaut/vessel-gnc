@@ -296,7 +296,7 @@ def animate_trajectory(
     fig, ax = plt.subplots(figsize=(9.0, 6.4))
     ax.set_aspect("equal")
     # Room under the axes for the shared legend row; the title must fit.
-    fig.subplots_adjust(left=0.08, right=0.98, top=0.92, bottom=0.30)
+    fig.subplots_adjust(left=0.06, right=0.99, top=0.95, bottom=0.22)
 
     # Fixed view over the trajectory (and the reference path), with margin.
     margin = 3.0
@@ -346,8 +346,8 @@ def animate_trajectory(
         color="0.35",
         alpha=0.5,
         units="xy",
-        scale=0.04,
-        width=0.35,
+        scale=0.06,
+        width=0.3,
         zorder=1,
     )
 
@@ -422,7 +422,7 @@ def animate_trajectory(
             list(artists),
             list(labels),
             loc="upper center",
-            bbox_to_anchor=(0.5, -0.20),
+            bbox_to_anchor=(0.5, -0.14),
             ncol=3,
             framealpha=0.9,
         )
