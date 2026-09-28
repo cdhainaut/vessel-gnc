@@ -18,6 +18,10 @@ results/*
 results/reference/*
 !results/reference/*.json
 
+# LaTeX intermediates: only the built whitepaper is committed
+paper/out/*
+!paper/out/main.pdf
+
 # Local agent context and internal roadmap (not part of the public repo)
 AGENTS.md
 vessel-gnc-plan.md

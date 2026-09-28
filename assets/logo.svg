@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 210" width="820" height="210" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+  <!-- Reference path (the S-curve of the flagship scenario) and its horizon -->
+  <path d="M 30 168 C 120 168, 150 168, 190 150 C 240 128, 260 74, 320 62 C 380 50, 430 58, 470 74"
+        fill="none" stroke="#2b2b2b" stroke-width="3" stroke-dasharray="10 8" stroke-linecap="round"/>
+  <path d="M 470 74 C 520 92, 560 104, 610 104"
+        fill="none" stroke="#3b83c5" stroke-width="3.5" stroke-linecap="round"/>
+  <!-- Vessel hull riding the path -->
+  <g transform="translate(455 68) rotate(16)">
+    <path d="M -34 0 L -22 -11 L 20 -14 L 34 0 L 20 14 L -22 11 Z"
+          fill="#ffffff" stroke="#14213d" stroke-width="3.5" stroke-linejoin="round"/>
+    <line x1="0" y1="0" x2="52" y2="0" stroke="#14213d" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <!-- Prediction horizon dots -->
+  <circle cx="505" cy="88" r="5" fill="#3b83c5"/>
+  <circle cx="545" cy="98" r="5" fill="#3b83c5" opacity="0.65"/>
+  <circle cx="585" cy="103" r="5" fill="#3b83c5" opacity="0.35"/>
+  <!-- Wordmark -->
+  <text x="30" y="52" font-size="58" font-weight="700" letter-spacing="1" fill="#14213d">Vessel-GNC</text>
+  <text x="30" y="92" font-size="22" letter-spacing="4.5" fill="#5b6b7f">SIMULATE · ESTIMATE · CONTROL</text>
+</svg>
