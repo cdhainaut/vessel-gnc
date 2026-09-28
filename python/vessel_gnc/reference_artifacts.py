@@ -80,9 +80,9 @@ SOURCE_GLOBS = (
 _SCENARIO_DESCRIPTION = (
     "Flagship reference scenario: one smooth S-curve geometry with LOS, nominal "
     "NMPC, disturbance-aware NMPC and disturbance-aware geometric MPCC. All "
-    "run on matched EKF estimates under a rotating current, gusts and a "
-    "perturbed truth plant; aware predictors hold the EKF equivalent-current "
-    "estimate constant over their horizon."
+    "run on matched EKF estimates under a rotating base current, a Rankine "
+    "eddy, gusts and a perturbed truth plant; aware predictors hold the EKF "
+    "equivalent-current estimate constant over their horizon."
 )
 _TIMING_TOKENS = ("solve", "wall", "elapsed", "_ms", "time_")
 
@@ -202,8 +202,10 @@ def _render_hero(run: ReferenceRun, output_path: Path) -> None:
     t_est = controller.estimator.t
     current_est = controller.estimator.current_estimate
 
-    def estimated_environment(t: float) -> _core.Environment:
-        # Nearest recorded filter estimate.
+    def estimated_environment(t: float, x: float = 0.0, y: float = 0.0) -> _core.Environment:
+        # Nearest recorded filter estimate. Position is unused: the
+        # augmented state is one current-equivalent vector for the vehicle,
+        # not a field.
         idx = int(np.searchsorted(t_est, t, side="right"))
         idx = min(max(idx - 1, 0), len(t_est) - 1)
         return _core.Environment(
@@ -271,6 +273,8 @@ def _render_hero(run: ReferenceRun, output_path: Path) -> None:
         fps=config.render_fps,
         wake_duration=config.render_hero_wake_duration_s,
         reference_path=run.path,
+        corridor_half_width_m=config.track_tolerance_m,
+        follow_view_width_m=config.render_hero_view_width_m,
         horizon=controller.horizon,
         horizon_label=(
             f"disturbance-aware prediction ({config.nmpc.horizon * config.nmpc.dt:.0f} s horizon)"
@@ -507,6 +511,7 @@ def _scenario_document(
         "seed": config.seed,
         "duration_s": config.duration_s,
         "integration_dt_s": config.integration_dt_s,
+        "track_tolerance_m": config.track_tolerance_m,
         "control_periods": {
             "estimator_s": config.estimator_period_s,
             "los_s": config.los_period_s,
@@ -531,6 +536,10 @@ def _scenario_document(
             "current_amplitude_m_s": env.current_amplitude,
             "current_period_s": env.current_period,
             "current_phase_rad": env.current_phase,
+            "eddy_north_m": env.eddy_north_m,
+            "eddy_east_m": env.eddy_east_m,
+            "eddy_radius_m": env.eddy_radius_m,
+            "eddy_peak_m_s": env.eddy_peak_m_s,
             "wind_mean_east_N": env.wind_mean_east,
             "gust_times_s": [float(t) for t in env.gust_times],
             "gust_peak_N": env.gust_peak,
@@ -589,6 +598,7 @@ def _scenario_document(
             "fps": config.render_fps,
             "hero_stride_frames": config.render_hero_stride_frames,
             "hero_wake_duration_s": config.render_hero_wake_duration_s,
+            "hero_view_width_m": config.render_hero_view_width_m,
             "horizon_shot_times_s": list(HORIZON_SHOT_TIMES_S),
             "path_render_samples": config.path_render_samples,
         },

@@ -93,8 +93,13 @@ at cruise so the vessel is directionally stable. Damping is linear plus
 quadratic in the relative velocity,
 $X_u u_r + X_{|u|u}|u_r|u_r$ per axis.
 
-The current is uniform and irrotational. Because the body frame rotates
-under a turning vessel, the inertially constant current gains a transport
+The current is a quasi-static spatial field: at each instant the flow
+around the hull is treated as locally uniform and irrotational, so
+Eq.~\eqref{eq:momentum} is unchanged and the field is simply sampled at
+the vessel position. The flagship scenario places a Rankine eddy (a
+solid-body core of 35\,m radius with irrotational $1/r$ decay outside) on
+top of a slowly rotating base flow. Because the body frame rotates under a
+turning vessel, a current that is inertially constant gains a transport
 acceleration in body coordinates,
 \begin{equation}
   \dot\nu_c^{\,b} = -S(r)\,v_c^{\,b}
@@ -205,11 +210,13 @@ are never applied: the fallback is the previously commanded action.
 The flagship scenario is one smooth S-curve (200.087\,m chord progress),
 120\,s at $t=0.01$\,s, seed 42. The plant uses \emph{perturbed} truth
 parameters ($+10\%$ mass, $+15\%$ inertia, reduced damping) behind a
-rate-limited actuator; the environment is a rotating current with two wind
-gusts; the sensors are noisy and asynchronous. Controllers see only the
-EKF output. Table~\ref{tab:metrics} is generated from the committed
-artifacts; Fig.~\ref{fig:comparison} shows the same comparison in time
-domain.
+rate-limited actuator; the environment is a rotating base current, a
+Rankine eddy and two wind gusts; the sensors are noisy and asynchronous.
+Controllers see only the EKF output. The operational requirement is a
+$\pm 1$\,m corridor around the reference: the LOS baseline violates it
+(max cross-track 1.07\,m), while all three predictive controllers hold
+it. Table~\ref{tab:metrics} is generated from the committed artifacts;
+Fig.~\ref{fig:comparison} shows the same comparison in time domain.
 
 \begin{table}[h]
 \centering

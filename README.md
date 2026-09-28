@@ -18,11 +18,13 @@ is regenerated from committed reference artifacts.
 
 ![Hero: disturbance-aware NMPC with predicted horizon](assets/hero.gif)
 
-*An autonomous surface vessel follows an S-curve reference path under a
-rotating current and wind gusts that are not supplied directly to the
-controller. The vessel is controlled from EKF estimates of noisy sensors;
-the cyan lines are the disturbance-aware NMPC's 10 s predictions, re-solved
-at 5 Hz.*
+*An autonomous surface vessel holds a +/-1 m corridor around an S-curve
+reference while crossing a Rankine eddy (blue shading and arrows: the
+current field) under wind gusts that are never supplied to the controller.
+The vessel is steered from EKF estimates of noisy sensors only; the cyan
+lines are the disturbance-aware NMPC's 10 s predictions, re-solved at
+5 Hz. The camera follows the boat, so the corridor, the vessel and the
+disturbance arrows (true solid, estimated dashed) stay readable.*
 
 **3-DOF dynamics · EKF · LOS/PID · disturbance-aware NMPC · geometric MPCC · C++20 · CasADi**
 
@@ -77,11 +79,11 @@ on the flagship scenario, is `python examples/05_nmpc_demo.py`.
 <!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **520.0 ns/step** |
-| 1000 s simulation (Python loop) | **363 ms** |
-| Nominal NMPC mean / median / p95 / max [ms] | **25.5 / 24.7 / 35.1 / 50.6** |
-| Disturbance-aware NMPC mean / median / p95 / max [ms] | **22.8 / 21.9 / 33.0 / 44.3** |
-| Disturbance-aware MPCC mean / median / p95 / max [ms] | **39.3 / 37.6 / 54.2 / 84.6** |
+| C++ RK4 propagation (vessel + actuator) | **579.6 ns/step** |
+| 1000 s simulation (Python loop) | **582 ms** |
+| Nominal NMPC mean / median / p95 / max [ms] | **26.0 / 23.6 / 43.9 / 69.0** |
+| Disturbance-aware NMPC mean / median / p95 / max [ms] | **21.7 / 20.3 / 29.5 / 48.7** |
+| Disturbance-aware MPCC mean / median / p95 / max [ms] | **37.8 / 33.4 / 61.9 / 156.4** |
 
 Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v3`, 900 predictive solves, 0 failed). Per-workload status histograms: Nominal NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware MPCC: 300 samples, 0 failed, Solve_Succeeded=300. The 5 Hz control period defines a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
 
@@ -107,22 +109,22 @@ removing the confounders (docs/estimation.md).
 <!-- generated:reference-controller-comparison-v1:start -->
 | Metric | LOS (PID/PI) | Nominal NMPC | Aware NMPC | Aware MPCC |
 |---|---:|---:|---:|---:|
-| RMS cross-track error [m] | 0.69 | 0.41 | 0.23 | 0.25 |
-| P95 cross-track error [m] | 0.98 | 0.65 | 0.53 | 0.61 |
-| Max cross-track error [m] | 1.07 | 0.74 | 0.63 | 0.71 |
-| RMS wrapped heading error [deg] | 7.1 | 10.5 | 11.2 | 9.8 |
-| Max wrapped heading error [deg] | 20.4 | 27.7 | 31.7 | 29.1 |
-| Final path progress [m] | 154.9 | 156.2 | 156.1 | 164.2 |
-| Final path progress fraction [-] | 0.774 | 0.781 | 0.780 | 0.821 |
-| Mean progress rate [m/s] | 1.29 | 1.30 | 1.30 | 1.37 |
+| RMS cross-track error [m] | 1.00 | 0.63 | 0.33 | 0.33 |
+| P95 cross-track error [m] | 1.77 | 1.17 | 0.72 | 0.63 |
+| Max cross-track error [m] | 1.89 | 1.28 | 0.88 | 1.06 |
+| RMS wrapped heading error [deg] | 6.5 | 9.7 | 11.5 | 11.1 |
+| Max wrapped heading error [deg] | 17.4 | 23.8 | 28.9 | 28.9 |
+| Final path progress [m] | 149.3 | 156.2 | 156.1 | 159.6 |
+| Final path progress fraction [-] | 0.746 | 0.781 | 0.780 | 0.797 |
+| Mean progress rate [m/s] | 1.24 | 1.30 | 1.30 | 1.33 |
 | Route completion [s] | — | — | — | — |
-| RMS applied thrust [N] | 31.8 | 33.7 | 33.5 | 36.6 |
-| Max applied thrust [N] | 38.5 | 59.2 | 59.1 | 43.1 |
-| RMS applied yaw moment [N m] | 1.5 | 2.2 | 2.5 | 2.3 |
-| Max applied yaw moment [N m] | 3.9 | 6.0 | 6.0 | 6.0 |
-| Thrust saturation duration [s] | 0.0 | 0.1 | 0.0 | 0.0 |
-| Yaw-moment saturation duration [s] | 0.0 | 2.4 | 1.7 | 2.3 |
-| Either channel saturated [s] | 0.0 | 2.5 | 1.7 | 2.3 |
+| RMS applied thrust [N] | 32.8 | 36.4 | 35.9 | 36.9 |
+| Max applied thrust [N] | 40.0 | 59.6 | 58.6 | 44.0 |
+| RMS applied yaw moment [N m] | 1.3 | 2.1 | 2.5 | 2.3 |
+| Max applied yaw moment [N m] | 3.4 | 5.9 | 6.0 | 6.0 |
+| Thrust saturation duration [s] | 0.0 | 1.2 | 0.0 | 0.0 |
+| Yaw-moment saturation duration [s] | 0.0 | 1.2 | 2.3 | 2.1 |
+| Either channel saturated [s] | 0.0 | 2.5 | 2.3 | 2.1 |
 
 Deterministic flagship metrics formatted from `results/reference/metrics.json` (scenario `scenario_v3_mpcc`, revision 1, seed 42, 120.0 s at 0.01 s integration). Route completion is the first sample at 99% of total chord progress; an incomplete route is shown as —. Saturation counts left-closed intervals whose applied value lies within 1% of a `ModelParams` bound span (docs/validation.md). No wall-clock timing appears here: predictive solve times are machine-dependent and reported separately in the benchmark table.
 
@@ -205,9 +207,9 @@ definitions are documented in `docs/validation.md`.
 | Schema | `results/reference/reference.schema.json` (version 3) |
 | Deterministic metrics | `results/reference/metrics.json` |
 | Machine-dependent benchmark | `results/reference/benchmark.json` |
-| Generated at (UTC) | 2026-09-28T15:48:40+00:00 |
-| Source commit | `ef2d7847d308e027f9ec251640d6a2f9355290b9` |
-| Source fingerprint | dirty: true · `45705c9170b15ba15e3694dfd4dfcef6ad589959625c11b276b1edb9fac18866` |
+| Generated at (UTC) | 2026-09-28T18:03:58+00:00 |
+| Source commit | `d140d80ec717edb12682e8d5f2bf2c9eca735ac4` |
+| Source fingerprint | dirty: true · `ea654dff51fb86b4c8fe06e9b837f687e39d3001c9135e32d2134841d47c30e7` |
 
 Provenance rows are generation-time records; the content-based source fingerprint is the authoritative consistency check. The full reproducibility contract and the metric definitions live in the validation documentation.
 

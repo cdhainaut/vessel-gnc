@@ -236,6 +236,8 @@ def animate_trajectory(
     wake_duration: float = 8.0,
     dpi: int = 90,
     reference_path: np.ndarray | None = None,
+    corridor_half_width_m: float | None = None,
+    follow_view_width_m: float | None = None,
     horizon: list[tuple[float, np.ndarray]] | None = None,
     horizon_label: str = "NMPC prediction",
     extra_trajectories: list[tuple[str, np.ndarray, str]] | None = None,
@@ -272,6 +274,11 @@ def animate_trajectory(
             (frame period = ``dt * stride``).
         fps: GIF frame rate.
         wake_duration: length of the speed-coloured wake ribbon [s].
+        corridor_half_width_m: optional operational track tolerance [m],
+            drawn as a corridor band around ``reference_path``.
+        follow_view_width_m: optional camera window [m]; when set, the view
+            follows the vessel with this window width so the corridor, the
+            vessel and the disturbance arrows stay readable.
         dpi: GIF resolution.
         reference_path: (M, 2) waypoints drawn as the reference path.
         horizon: recorded predictive predictions, shown per frame.
@@ -311,9 +318,68 @@ def animate_trajectory(
     ax.set_xlim(x_lo - margin, x_hi + margin)
     ax.set_ylim(y_lo - margin, y_hi + margin)
 
+    # Environmental field (policies only): current speed shading with the
+    # velocity vectors on top, evaluated at each frame's time and position.
+    field_xx, field_yy = np.meshgrid(
+        np.linspace(x_lo - margin, x_hi + margin, 15),
+        np.linspace(y_lo - margin, y_hi + margin, 11),
+    )
+    field_north = np.zeros_like(field_xx)
+    field_east = np.zeros_like(field_xx)
+    field_speed = np.zeros_like(field_xx)
+    field_map = ax.pcolormesh(
+        field_xx,
+        field_yy,
+        field_speed,
+        cmap="Blues",
+        alpha=0.55,
+        shading="gouraud",
+        vmin=0.0,
+        vmax=0.3,
+        zorder=0,
+    )
+    field_arrows = ax.quiver(
+        field_xx,
+        field_yy,
+        field_north,
+        field_east,
+        color="0.35",
+        alpha=0.5,
+        units="xy",
+        scale=0.04,
+        width=0.35,
+        zorder=1,
+    )
+
     # Static elements.
     legend_entries = []
     if reference_path is not None:
+        if corridor_half_width_m is not None:
+            # Operational track tolerance: the corridor the mission has to
+            # hold around the reference, drawn under every trajectory.
+            tangent = np.gradient(rp, axis=0)
+            norm = np.linalg.norm(tangent, axis=1)
+            norm[norm == 0.0] = 1.0
+            offset = (
+                corridor_half_width_m
+                * np.column_stack([tangent[:, 1], -tangent[:, 0]])
+                / norm[:, None]
+            )
+            corridor = np.concatenate([rp + offset, (rp - offset)[::-1]])
+            ax.fill(
+                corridor[:, 0],
+                corridor[:, 1],
+                color="tab:green",
+                alpha=0.25,
+                zorder=0,
+                linewidth=0,
+            )
+            legend_entries.append(
+                (
+                    plt.Rectangle((0, 0), 1, 1, facecolor="tab:green", alpha=0.25),
+                    f"+/-{corridor_half_width_m:g} m track tolerance",
+                )
+            )
         ax.plot(rp[:, 0], rp[:, 1], "k--", lw=1.2, zorder=1)
         legend_entries.append((plt.Line2D([], [], color="k", ls="--", lw=1.2), "reference"))
     if extra_trajectories:
@@ -361,20 +427,24 @@ def animate_trajectory(
             framealpha=0.9,
         )
     ax.plot(result.x[0], result.y[0], "o", color="tab:green", ms=8)
-    hull, heading = _create_vessel_artists(ax, scale=1.25)
-    # Environment arrows live in the free corner opposite the path start:
-    # anchoring them at the start piled arrows and labels onto the early
-    # trajectory. The estimated group sits north of the true group so the
-    # two never overlap.
-    env_arrow_anchor = (x_hi + margin - 32.0, y_lo - margin + 1.5)
-    estimated_env_anchor = (x_hi + margin - 32.0, y_lo - margin + 8.5)
+    hull, heading = _create_vessel_artists(ax, scale=2.5)
+    # Disturbance arrows ride with the vessel: they show what the boat is
+    # responding to at each instant, true (solid) versus the EKF estimate
+    # (dashed). Constant environments are drawn once at the first position.
     env_artists = []
     if not callable(environment):
-        static_artists, _ = environment_arrows(ax, environment, *env_arrow_anchor, annotate=True)
+        static_artists, _ = environment_arrows(
+            ax, environment, result.x[0], result.y[0], annotate=False
+        )
         env_artists += static_artists
     if not callable(estimated_environment):
         static_artists, _ = environment_arrows(
-            ax, estimated_environment, *estimated_env_anchor, annotate=True, estimated=True
+            ax,
+            estimated_environment,
+            result.x[0],
+            result.y[0],
+            annotate=False,
+            estimated=True,
         )
         env_artists += static_artists
     info = ax.text(
@@ -409,10 +479,20 @@ def animate_trajectory(
 
     wake_steps = max(1, int(wake_duration / result.dt))
     indices = np.arange(0, result.n_steps + 1, stride)
+    # Data-per-axis ratio of the drawing box, so an equal-aspect chase
+    # window exactly fills the axes without resizing the layout.
+    box = ax.get_position()
+    view_height_over_width = (box.height * fig.get_figheight()) / (box.width * fig.get_figwidth())
 
     def update(frame: int) -> tuple:
         nonlocal env_artists
         i = int(indices[frame])
+        if follow_view_width_m is not None:
+            # Chase camera: world-fixed field and paths, vessel-centred view.
+            half_w = follow_view_width_m / 2.0
+            half_h = half_w * view_height_over_width
+            ax.set_xlim(result.x[i] - half_w, result.x[i] + half_w)
+            ax.set_ylim(result.y[i] - half_h, result.y[i] + half_h)
         if callable(environment) or callable(estimated_environment):
             # Per-frame environment: replace the previous arrows in place.
             for artist in env_artists:
@@ -421,15 +501,29 @@ def animate_trajectory(
             t_now = result.t[i]
             if callable(environment):
                 frame_artists, _ = environment_arrows(
-                    ax, environment(t_now), *env_arrow_anchor, annotate=True
+                    ax,
+                    environment(t_now, result.x[i], result.y[i]),
+                    result.x[i],
+                    result.y[i],
+                    annotate=False,
                 )
                 env_artists += frame_artists
+                # Field map at this instant: speed shading plus vectors.
+                for row in range(field_xx.shape[0]):
+                    for col in range(field_xx.shape[1]):
+                        cell = environment(t_now, field_xx[row, col], field_yy[row, col])
+                        field_north[row, col] = cell.current_north
+                        field_east[row, col] = cell.current_east
+                field_speed[:] = np.hypot(field_north, field_east)
+                field_map.set_array(field_speed.ravel())
+                field_arrows.set_UVC(field_north, field_east)
             if callable(estimated_environment):
                 frame_artists, _ = environment_arrows(
                     ax,
-                    estimated_environment(t_now),
-                    *estimated_env_anchor,
-                    annotate=True,
+                    estimated_environment(t_now, result.x[i], result.y[i]),
+                    result.x[i],
+                    result.y[i],
+                    annotate=False,
                     estimated=True,
                 )
                 env_artists += frame_artists

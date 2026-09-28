@@ -116,12 +116,16 @@ Gaussian wind gusts on top of the mean force. Everything is exactly
 reproducible: there is no RNG anywhere in the environment (portfolio plan
 Phase D).
 
-The current is an ambient flow with inertial components `(V_cN, V_cE)`,
-assumed uniform and irrotational. Damping and Coriolis terms act on the
-*relative* velocity `nu_rel = nu - R(psi)^T [V_cN, V_cE]^T`; the absolute
-acceleration also includes the body-frame transport term above. Physical
-consequences: a vessel at rest in a current is dragged along with it; a
-vessel moving exactly with a constant inertial current feels no
+The current is a quasi-static spatial field: at each instant the flow around
+the hull is treated as locally uniform and irrotational, so the equations
+above are unchanged and the field is simply sampled at the vessel position.
+The default scenario places a Rankine eddy (solid-body rotation inside a
+35 m core, irrotational ``1/r`` decay outside, 0.25 m/s peak tangential
+speed) on top of a slowly rotating base flow. Damping and Coriolis terms
+act on the *relative* velocity `nu_rel = nu - R(psi)^T [V_cN, V_cE]^T`; the
+absolute acceleration also includes the body-frame transport term above.
+Physical consequences: a vessel at rest in a current is dragged along with
+it; a vessel moving exactly with a constant inertial current feels no
 hydrodynamic load, including while its body frame turns. (These cases are
 validated in `tests/`.) Wind is a constant force in the inertial frame,
 applied at the hull centre; wind-induced yaw moment is neglected in the
