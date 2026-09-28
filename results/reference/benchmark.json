@@ -2,12 +2,12 @@
   "$schema": "results/reference/reference.schema.json",
   "artifact_type": "benchmark",
   "benchmark_id": "benchmark_v3",
-  "git_commit": "6cde605b1c8021598b26250718ec21c56a577264",
+  "git_commit": "90773650edede451801d5226cfa092e7c2aca6f8",
   "schema_version": 3,
   "workloads": {
     "kernel": {
       "name": "cpp_rk4_propagation",
-      "ns_per_step": 530.4798649922304,
+      "ns_per_step": 764.4039350270759,
       "steps": 200000
     },
     "mpcc_disturbance_aware": {
@@ -18,11 +18,11 @@
       "final_status_histogram": {
         "Solve_Succeeded": 300
       },
-      "max_ms": 107.7220250008395,
-      "mean_ms": 32.708401630055356,
-      "median_ms": 30.693365501065273,
+      "max_ms": 148.09699000034016,
+      "mean_ms": 54.72357397358186,
+      "median_ms": 51.63022700071451,
       "name": "disturbance_aware_s_curve_mpcc_60s",
-      "p95_ms": 42.85766714892816,
+      "p95_ms": 78.94208429424909,
       "samples": 300
     },
     "nmpc_disturbance_aware": {
@@ -33,11 +33,11 @@
       "final_status_histogram": {
         "Solve_Succeeded": 300
       },
-      "max_ms": 30.1385080019827,
-      "mean_ms": 19.96258319334932,
-      "median_ms": 19.588293000197154,
+      "max_ms": 84.06660400214605,
+      "mean_ms": 33.586254353431286,
+      "median_ms": 31.676683502155356,
       "name": "disturbance_aware_s_curve_nmpc_60s",
-      "p95_ms": 24.75133949992596,
+      "p95_ms": 47.445447999780306,
       "samples": 300
     },
     "nmpc_nominal": {
@@ -48,17 +48,17 @@
       "final_status_histogram": {
         "Solve_Succeeded": 300
       },
-      "max_ms": 36.93449599813903,
-      "mean_ms": 20.92422313334585,
-      "median_ms": 19.946215999880224,
+      "max_ms": 125.67497300187824,
+      "mean_ms": 34.46509729687629,
+      "median_ms": 31.433258001925424,
       "name": "nominal_s_curve_nmpc_60s",
-      "p95_ms": 27.901094199478397,
+      "p95_ms": 52.49486570392037,
       "samples": 300
     },
     "simulation": {
       "duration_s": 1000.0,
       "name": "python_orchestration_1000s",
-      "wall_time_ms": 393.0077899967728
+      "wall_time_ms": 562.5425479956903
     }
   }
 }

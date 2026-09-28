@@ -4,12 +4,12 @@
   "artifacts": {
     "assets/controller_comparison.png": "d6ee19cca4be63b0c7286d0150b43687ce36a7cd320b56178b0c5a4ccf06554e",
     "assets/current_estimation.png": "c90528ff0ea60a589d26d7a69d2bcaf26420caac0ba8156ef83cf724c7cfbe7b",
-    "assets/hero.gif": "2d633ac98814533c60c8011344fa2a781e465b53c7910ca03fb0346b0c12c4f4",
-    "results/reference/benchmark.json": "0927b51d9c0c806caa07f362382f0c9e729bf26f6a955011e4e8bf4fdb6c2e6c",
-    "results/reference/config.json": "11d5d52e7caae38445e7876f6471effaf58e184761242b5e2020edfde2805311",
+    "assets/hero.gif": "549332770abc20afa214e8813dd262a920ab8eb0bbf666dd5d6b7e95771d0ca4",
+    "results/reference/benchmark.json": "81fdad59cdf34be82f83c144dfee7ede3d82707f5cac89db24510c40afc76b34",
+    "results/reference/config.json": "ac643e6fd2eb2d7d46506c96804db007397fecd4fae9cb6b08fdaf2998da78c4",
     "results/reference/metrics.json": "097877315e6c3fbbaa23dc5ad3c5d2f8faa88864b84f28466e10a57b6602eb9c"
   },
-  "generated_at_utc": "2026-09-28T20:06:26+00:00",
+  "generated_at_utc": "2026-09-28T21:28:15+00:00",
   "platform": {
     "machine": "x86_64",
     "os": "Linux"
@@ -58,6 +58,6 @@
       "src/integrator.cpp",
       "tools/generate_reference_results.py"
     ],
-    "sha256": "eafe133a9a9f450edba219f3b139a4960c200739409162d8e97c7f7499829cbc"
+    "sha256": "8a12c01e0d54be3718ed3feb0a65d751f2dcca2f366a318569616c45e778691a"
   }
 }
