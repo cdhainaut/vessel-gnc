@@ -92,6 +92,7 @@ def environment_arrows(
     y0: float,
     annotate: bool = False,
     estimated: bool = False,
+    scale_factor: float = 1.0,
 ) -> tuple[list, list[tuple]]:
     """Draw current/wind arrows anchored at ``(x0, y0)`` in data coordinates.
 
@@ -101,7 +102,9 @@ def environment_arrows(
     current arrow so the arrows and their labels never overlap. With
     ``estimated=True`` the arrow is dashed and labelled as the EKF
     equivalent-current state used in the combined-uncertainty flagship.
-    Zero components are skipped.
+    Zero components are skipped. ``scale_factor`` multiplies the drawn
+    arrow length (and the wind offset) so callers can size the arrows to
+    their view.
 
     Returns:
         ``(artists, handles)``: the drawn artists (so per-frame callers can
@@ -115,7 +118,7 @@ def environment_arrows(
 
     if environment.current_north != 0.0 or environment.current_east != 0.0:
         vn, ve = environment.current_north, environment.current_east
-        scale = 10.0  # m of arrow per m/s of current
+        scale = 10.0 * scale_factor  # m of arrow per m/s of current
         tip = (x0 + scale * vn, y0 + scale * ve)
         artists.append(
             ax.annotate(
@@ -134,9 +137,9 @@ def environment_arrows(
 
     if environment.wind_north != 0.0 or environment.wind_east != 0.0:
         wn, we = environment.wind_north, environment.wind_east
-        scale = 0.2  # m of arrow per N of wind force
+        scale = 0.2 * scale_factor  # m of arrow per N of wind force
         # Offset anchor so the wind arrow never overlaps the current arrow.
-        y_wind = y0 + 3.5
+        y_wind = y0 + 3.5 * scale_factor
         tip = (x0 + scale * wn, y_wind + scale * we)
         artists.append(
             ax.annotate(
@@ -301,6 +304,8 @@ def animate_trajectory(
     ax.set_aspect("equal")
     # Room under the axes for the shared legend row; the title must fit.
     fig.subplots_adjust(left=0.06, right=0.99, top=0.95, bottom=0.22)
+    box = ax.get_position()
+    view_height_over_width = (box.height * fig.get_figheight()) / (box.width * fig.get_figwidth())
 
     # Fixed view over the trajectory (and the reference path), with margin.
     margin = 3.0
@@ -325,25 +330,48 @@ def animate_trajectory(
             x_hi = max(x_hi, pts[:, 0].max())
             y_lo = min(y_lo, pts[:, 1].min())
             y_hi = max(y_hi, pts[:, 1].max())
+    # Pad the shorter span so the window matches the drawing-box ratio and
+    # equal aspect fills the frame instead of letterboxing it.
+    span_x = x_hi - x_lo + 2.0 * margin
+    span_y = y_hi - y_lo + 2.0 * margin
+    if span_x / span_y > view_height_over_width:
+        extra = span_x / view_height_over_width - span_y
+        y_lo -= extra / 2.0
+        y_hi += extra / 2.0
+    else:
+        extra = span_y * view_height_over_width - span_x
+        x_lo -= extra / 2.0
+        x_hi += extra / 2.0
     ax.set_xlim(x_lo - margin, x_hi + margin)
     ax.set_ylim(y_lo - margin, y_hi + margin)
 
     # Environmental field (policies only): current speed shading with the
     # velocity vectors on top, evaluated at each frame's time and position.
+    # The grid and the arrow length scale with the view, so the scene reads
+    # the same whether the window covers 25 m (station-keeping) or 175 m.
+    span_x = 2.0 * margin + x_hi - x_lo
+    span_y = 2.0 * margin + y_hi - y_lo
+    field_nx = int(np.clip(round(span_x / 14.0), 6, 24))
+    field_ny = int(np.clip(round(span_y / 10.0), 5, 18))
     field_xx, field_yy = np.meshgrid(
-        np.linspace(x_lo - margin, x_hi + margin, 15),
-        np.linspace(y_lo - margin, y_hi + margin, 11),
+        np.linspace(x_lo - margin, x_hi + margin, field_nx),
+        np.linspace(y_lo - margin, y_hi + margin, field_ny),
     )
+    grid_spacing = min(span_x / (field_nx - 1), span_y / (field_ny - 1))
     field_north = np.zeros_like(field_xx)
     field_east = np.zeros_like(field_xx)
-    field_speed = np.zeros_like(field_xx)
-    # Banded filled contours rather than a smooth gradient: they read as a
-    # technical map, and flat colour regions keep the GIF palette small.
+    # A finer mesh for the speed bands: contours need resolution, the
+    # vectors need air.
+    contour_xx, contour_yy = np.meshgrid(
+        np.linspace(x_lo - margin, x_hi + margin, 26),
+        np.linspace(y_lo - margin, y_hi + margin, 20),
+    )
+    contour_speed = np.zeros_like(contour_xx)
     field_levels = np.linspace(0.0, 0.3, 7)
     field_contours = ax.contourf(
-        field_xx,
-        field_yy,
-        field_speed,
+        contour_xx,
+        contour_yy,
+        contour_speed,
         levels=field_levels,
         cmap="Blues",
         alpha=0.5,
@@ -355,12 +383,16 @@ def animate_trajectory(
         field_north,
         field_east,
         color="0.35",
-        alpha=0.5,
+        alpha=0.45,
         units="xy",
-        scale=0.06,
-        width=0.3,
+        # A 0.30 m/s current draws about half a grid cell.
+        scale=0.30 / (0.55 * grid_spacing),
+        width=0.035 * grid_spacing,
+        headwidth=2.5,
+        headlength=3.5,
         zorder=1,
     )
+    hull_scale = float(np.clip(0.03 * span_x / 1.5, 0.6, 2.5))
 
     # Static elements.
     legend_entries = []
@@ -456,14 +488,19 @@ def animate_trajectory(
             framealpha=0.9,
         )
     ax.plot(result.x[0], result.y[0], "o", color="tab:green", ms=8)
-    hull, heading = _create_vessel_artists(ax, scale=2.5)
+    hull, heading = _create_vessel_artists(ax, scale=hull_scale)
     # Disturbance arrows ride with the vessel: they show what the boat is
     # responding to at each instant, true (solid) versus the EKF estimate
     # (dashed). Constant environments are drawn once at the first position.
     env_artists = []
     if not callable(environment):
         static_artists, _ = environment_arrows(
-            ax, environment, result.x[0], result.y[0], annotate=False
+            ax,
+            environment,
+            result.x[0],
+            result.y[0],
+            annotate=False,
+            scale_factor=span_x / 40.0,
         )
         env_artists += static_artists
     if not callable(estimated_environment):
@@ -474,6 +511,7 @@ def animate_trajectory(
             result.y[0],
             annotate=False,
             estimated=True,
+            scale_factor=span_x / 40.0,
         )
         env_artists += static_artists
     info = ax.text(
@@ -510,8 +548,14 @@ def animate_trajectory(
     indices = np.arange(0, result.n_steps + 1, stride)
     # Data-per-axis ratio of the drawing box, so an equal-aspect chase
     # window exactly fills the axes without resizing the layout.
-    box = ax.get_position()
-    view_height_over_width = (box.height * fig.get_figheight()) / (box.width * fig.get_figwidth())
+    if follow_view_width_m is not None:
+        # Seed the chase window before the first draw: with equal aspect,
+        # drawing the full extent first would letterbox the axes box.
+        half_w = follow_view_width_m / 2.0
+        half_h = half_w * view_height_over_width
+        i0 = int(indices[0])
+        ax.set_xlim(result.x[i0] - half_w, result.x[i0] + half_w)
+        ax.set_ylim(result.y[i0] - half_h, result.y[i0] + half_h)
 
     def update(frame: int) -> tuple:
         nonlocal env_artists, field_contours
@@ -535,6 +579,7 @@ def animate_trajectory(
                     result.x[i],
                     result.y[i],
                     annotate=False,
+                    scale_factor=span_x / 40.0,
                 )
                 env_artists += frame_artists
                 # Field map at this instant: banded speed contours plus vectors.
@@ -543,12 +588,15 @@ def animate_trajectory(
                         cell = environment(t_now, field_xx[row, col], field_yy[row, col])
                         field_north[row, col] = cell.current_north
                         field_east[row, col] = cell.current_east
-                field_speed[:] = np.hypot(field_north, field_east)
+                for row in range(contour_xx.shape[0]):
+                    for col in range(contour_xx.shape[1]):
+                        cell = environment(t_now, contour_xx[row, col], contour_yy[row, col])
+                        contour_speed[row, col] = np.hypot(cell.current_north, cell.current_east)
                 field_contours.remove()
                 field_contours = ax.contourf(
-                    field_xx,
-                    field_yy,
-                    field_speed,
+                    contour_xx,
+                    contour_yy,
+                    contour_speed,
                     levels=field_levels,
                     cmap="Blues",
                     alpha=0.5,
@@ -563,6 +611,7 @@ def animate_trajectory(
                     result.y[i],
                     annotate=False,
                     estimated=True,
+                    scale_factor=span_x / 40.0,
                 )
                 env_artists += frame_artists
         j0 = max(0, i - wake_steps)
