@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 580" font-family="Helvetica, Arial, sans-serif">
+  <!-- Explicit light card: keeps text and arrows readable in dark mode. -->
+  <rect x="0" y="0" width="960" height="580" fill="white"/>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"
             orient="auto-start-reverse">

@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 210" width="820" height="210" font-family="DejaVu Sans, Helvetica, Arial, sans-serif">
+  <!-- Explicit light card: keeps the wordmark readable in dark mode. -->
+  <rect x="0" y="0" width="820" height="210" rx="18" fill="white"/>
   <!-- Reference path (the S-curve of the flagship scenario) and its horizon -->
   <path d="M 30 168 C 120 168, 150 168, 190 150 C 240 128, 260 74, 320 62 C 380 50, 430 58, 470 74"
         fill="none" stroke="#2b2b2b" stroke-width="3" stroke-dasharray="10 8" stroke-linecap="round"/>
