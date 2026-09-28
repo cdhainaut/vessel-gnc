@@ -176,7 +176,7 @@ def _write(reference_dir: Path) -> None:
     Also copies the committed schema beside them, mirrors the repository
     layout (results/reference holds the schema plus the four artifacts), and
     creates the README/docs marker files with placeholder bodies before
-    ``update_generated_markdown`` fills them from the synthetic JSON — the
+    ``update_generated_markdown`` fills them from the synthetic JSON, the
     same order the default generation tool uses.
     """
     reference_dir.mkdir(parents=True, exist_ok=True)

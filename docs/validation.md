@@ -2,15 +2,15 @@
 
 This page is the **index** of every validation case in the repository. Each
 case is automated (see the linked test files); the detailed formulations,
-conventions and limitations live in the linked documentation — nothing is
+conventions and limitations live in the linked documentation. Nothing is
 duplicated here.
 
 Status legend:
 
-- **verified implementation** — the code does what the equations say
+- **verified implementation**: the code does what the equations say
   (analytical, consistency and convergence checks);
-- **validated physical model** — behaviour compared against known physics;
-- **illustrative model** — the parameter values are order-of-magnitude, not
+- **validated physical model**: behaviour compared against known physics;
+- **illustrative model**: the parameter values are order-of-magnitude, not
   identified from a real vessel (docs/model.md §6-§7).
 
 ## Kinematics and dynamics (3-DOF model)
@@ -106,11 +106,11 @@ metrics.
 <!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **506.6 ns/step** |
-| 1000 s simulation (Python loop) | **366 ms** |
-| Nominal NMPC mean / median / p95 / max [ms] | **20.1 / 19.1 / 27.6 / 36.6** |
-| Disturbance-aware NMPC mean / median / p95 / max [ms] | **19.2 / 18.4 / 23.8 / 28.5** |
-| Disturbance-aware MPCC mean / median / p95 / max [ms] | **33.8 / 32.1 / 41.6 / 86.1** |
+| C++ RK4 propagation (vessel + actuator) | **898.5 ns/step** |
+| 1000 s simulation (Python loop) | **596 ms** |
+| Nominal NMPC mean / median / p95 / max [ms] | **36.1 / 34.0 / 58.2 / 95.0** |
+| Disturbance-aware NMPC mean / median / p95 / max [ms] | **32.1 / 29.1 / 54.8 / 96.6** |
+| Disturbance-aware MPCC mean / median / p95 / max [ms] | **53.3 / 48.2 / 83.9 / 148.4** |
 
 Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v3`, 900 predictive solves, 0 failed). Per-workload status histograms: Nominal NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware MPCC: 300 samples, 0 failed, Solve_Succeeded=300. The 5 Hz control period defines a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
 
@@ -119,7 +119,7 @@ Machine-dependent wall-clock measurements recorded in `results/reference/benchma
 ## Reference provenance
 
 Every public number in this repository is generated from the committed
-reference artifacts — nothing is hand-edited between the generated markers.
+reference artifacts; nothing is hand-edited between the generated markers.
 Scenario, seed, configuration, source revision and fingerprint:
 
 <!-- generated:reference-provenance-v1:start -->
@@ -133,9 +133,9 @@ Scenario, seed, configuration, source revision and fingerprint:
 | Schema | `results/reference/reference.schema.json` (version 3) |
 | Deterministic metrics | `results/reference/metrics.json` |
 | Machine-dependent benchmark | `results/reference/benchmark.json` |
-| Generated at (UTC) | 2026-09-28T12:31:10+00:00 |
-| Source commit | `21d6c7501096755989ad447996980f5da431f128` |
-| Source fingerprint | dirty: true · `53fc1406cc94ccba538a071593f58e6428d78dca74404df5cdfc8a407a256845` |
+| Generated at (UTC) | 2026-09-28T14:42:30+00:00 |
+| Source commit | `a6702cb6107d7897ef8c64be7e1189bedf9bf922` |
+| Source fingerprint | dirty: true · `9c5390281ffa0549a022f2ed472e2b9df1cfee0f5feacb57ed8097edc554a689` |
 
 Provenance rows are generation-time records; the content-based source fingerprint is the authoritative consistency check. The full reproducibility contract and the metric definitions live in the validation documentation.
 

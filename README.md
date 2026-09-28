@@ -23,11 +23,11 @@ at 5 Hz.*
 <!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **506.6 ns/step** |
-| 1000 s simulation (Python loop) | **366 ms** |
-| Nominal NMPC mean / median / p95 / max [ms] | **20.1 / 19.1 / 27.6 / 36.6** |
-| Disturbance-aware NMPC mean / median / p95 / max [ms] | **19.2 / 18.4 / 23.8 / 28.5** |
-| Disturbance-aware MPCC mean / median / p95 / max [ms] | **33.8 / 32.1 / 41.6 / 86.1** |
+| C++ RK4 propagation (vessel + actuator) | **898.5 ns/step** |
+| 1000 s simulation (Python loop) | **596 ms** |
+| Nominal NMPC mean / median / p95 / max [ms] | **36.1 / 34.0 / 58.2 / 95.0** |
+| Disturbance-aware NMPC mean / median / p95 / max [ms] | **32.1 / 29.1 / 54.8 / 96.6** |
+| Disturbance-aware MPCC mean / median / p95 / max [ms] | **53.3 / 48.2 / 83.9 / 148.4** |
 
 Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v3`, 900 predictive solves, 0 failed). Per-workload status histograms: Nominal NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware MPCC: 300 samples, 0 failed, Solve_Succeeded=300. The 5 Hz control period defines a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
 
@@ -75,8 +75,8 @@ Deterministic flagship metrics formatted from `results/reference/metrics.json` (
 <!-- generated:reference-controller-comparison-v1:end -->
 
 The table exposes the complete trade-off: tracking, heading alignment,
-actuator use and saturation for all three controllers. Every number is
-formatted from the committed reference artifacts — no cherry-picked values.
+actuator use and saturation for all four controllers. Every number is
+formatted from the committed reference artifacts, with no hand-picked values.
 
 ![Controller comparison](assets/controller_comparison.png)
 
@@ -92,8 +92,8 @@ against the C++ kernel with non-zero current and wind (max diff < 1e-8).
 
 ## Uncertainty-aware control
 
-The reference scenario already runs the full chain — physical model,
-simulation, estimation, optimal control — under disturbances that the
+The reference scenario already runs the whole chain (physical model,
+simulation, estimation, optimal control) under disturbances the
 controllers do not see:
 
 - actuator dynamics with saturation and rate limits;
@@ -114,17 +114,17 @@ robustness analysis of physics-based control.
 
 ## Reference results
 
-Committed, versioned artifacts — the sole numerical source of truth:
+Committed, versioned artifacts, the only numerical source of truth:
 
-- `results/reference/config.json` — the full scenario configuration
+- `results/reference/config.json`: the full scenario configuration
   (parameter values, not digests, including nominal and truth plant sets);
-- `results/reference/metrics.json` — deterministic tracking and estimator
+- `results/reference/metrics.json`: deterministic tracking and estimator
   metrics, no timing;
-- `results/reference/benchmark.json` — machine-dependent benchmark timing;
-- `results/reference/metadata.json` — software/platform versions, source
+- `results/reference/benchmark.json`: machine-dependent benchmark timing;
+- `results/reference/metadata.json`: software/platform versions, source
   fingerprint and artifact hashes;
 - `assets/hero.gif`, `assets/controller_comparison.png`,
-  `assets/current_estimation.png` — flagship assets, regenerated from the
+  `assets/current_estimation.png`: flagship assets, regenerated from the
   same reference run.
 
 The example scripts additionally write their own figures into `results/`
@@ -133,8 +133,9 @@ NMPC trajectories).
 
 `results/reference/config.json`, `results/reference/benchmark.json` and
 `results/reference/metadata.json` record the repository state **at
-generation time** — honest provenance, not a claim about the current
-checkout. The authoritative consistency check is the content-based source
+generation time**. That is honest provenance: it describes when the
+artifacts were produced, not the current checkout. The authoritative
+consistency check is the content-based source
 fingerprint; the full reproducibility contract (`--check`,
 `--verify-determinism`, tolerances, generation environment) and the metric
 definitions are documented in `docs/validation.md`.
@@ -150,9 +151,9 @@ definitions are documented in `docs/validation.md`.
 | Schema | `results/reference/reference.schema.json` (version 3) |
 | Deterministic metrics | `results/reference/metrics.json` |
 | Machine-dependent benchmark | `results/reference/benchmark.json` |
-| Generated at (UTC) | 2026-09-28T12:31:10+00:00 |
-| Source commit | `21d6c7501096755989ad447996980f5da431f128` |
-| Source fingerprint | dirty: true · `53fc1406cc94ccba538a071593f58e6428d78dca74404df5cdfc8a407a256845` |
+| Generated at (UTC) | 2026-09-28T14:42:30+00:00 |
+| Source commit | `a6702cb6107d7897ef8c64be7e1189bedf9bf922` |
+| Source fingerprint | dirty: true · `9c5390281ffa0549a022f2ed472e2b9df1cfee0f5feacb57ed8097edc554a689` |
 
 Provenance rows are generation-time records; the content-based source fingerprint is the authoritative consistency check. The full reproducibility contract and the metric definitions live in the validation documentation.
 
@@ -160,8 +161,8 @@ Provenance rows are generation-time records; the content-based source fingerprin
 
 ## Model
 
-3-DOF horizontal-plane manoeuvring model — a Fossen-inspired formulation,
-docs/model.md:
+3-DOF horizontal-plane manoeuvring model, Fossen-inspired (full
+derivation in `docs/model.md`):
 
 ```text
 eta = [x, y, psi]^T          nu = [u, v, r]^T
@@ -240,13 +241,13 @@ cmake -B build -DVESSEL_GNC_BUILD_BENCHMARKS=ON && cmake --build build
 
 ## Documentation
 
-- `docs/model.md` — reference frames, equations, environment model,
+- `docs/model.md`: reference frames, equations, environment model,
   parameters and approximations.
-- `docs/control.md` — baseline controllers, LOS guidance and the NMPC
+- `docs/control.md`: baseline controllers, LOS guidance and the NMPC
   formulation (weights, sub-stepping, warm start).
-- `docs/estimation.md` — augmented EKF formulation (vessel + current),
+- `docs/estimation.md`: augmented EKF formulation (vessel + current),
   sensor model and the disturbance-estimation validation.
-- `docs/validation.md` — the full validation record.
+- `docs/validation.md`: the full validation record.
 
 ## Roadmap
 

@@ -133,10 +133,10 @@ def write_reference_json(
 def render_reference_assets(run: ReferenceRun, repo_root: Path) -> list[Path]:
     """Render the flagship assets from an in-memory reference run.
 
-    Regenerates the three committed public assets — the hero animation
-    (``assets/hero.gif``), the deterministic controller-comparison figure
-    (``assets/controller_comparison.png``) and the current-estimation
-    figure (``assets/current_estimation.png``) — plus the ignored
+    Regenerates the three committed public assets (the hero animation
+    ``assets/hero.gif``, the deterministic controller-comparison figure
+    ``assets/controller_comparison.png`` and the current-estimation
+    figure ``assets/current_estimation.png``) plus the ignored
     trajectory figure (``results/reference/nmpc_trajectory.png``), all from
     the same in-memory ``run`` so every asset shares the exact reference
     scenario and seed. Wall-clock timing never enters these figures:
@@ -264,7 +264,7 @@ def _render_hero(run: ReferenceRun, output_path: Path) -> None:
         environment=config.environment.sample,
         estimated_environment=estimated_environment,
         title=(
-            "Four controllers on the smooth S-curve — "
+            "Four controllers on the smooth S-curve: "
             "disturbance-aware NMPC with prediction horizons"
         ),
         stride=config.render_hero_stride_frames,
@@ -394,7 +394,7 @@ def verify_reference_determinism(repo_root: Path) -> None:
     contract: the LOS baseline metrics must match
     ``results/reference/metrics.json`` exactly (no iterative solver), while
     both NMPC variants, MPCC and estimator metrics must match within
-    ``rtol=1e-6``, ``atol=1e-6`` — IPOPT solves to ``tol=1e-4``
+    ``rtol=1e-6``, ``atol=1e-6``; IPOPT solves to ``tol=1e-4``
     (docs/control.md §5) and its full-precision iterates may legitimately
     differ in the last ulps between runs. On failure the message reports the
     worst offending key and its absolute/relative deviation. This is the
@@ -802,7 +802,7 @@ def _source_fingerprint_matches(recorded: dict[str, object], current: dict[str, 
     ``git_commit`` fields of config/benchmark) and is deliberately not
     compared: after the source is committed, a clean checkout reports
     ``dirty: false`` and a new HEAD while the content digest is unchanged.
-    The content fingerprint remains authoritative — any scenario/parameter/
+    The content fingerprint remains authoritative: any scenario/parameter/
     source change alters ``files`` or ``sha256`` and fails the check.
     """
     return recorded.get("files") == current["files"] and recorded.get("sha256") == current["sha256"]

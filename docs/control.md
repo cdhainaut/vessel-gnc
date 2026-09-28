@@ -1,4 +1,4 @@
-# Baseline control — LOS guidance with PID heading and PI speed control
+# Baseline control: LOS guidance with PID heading and PI speed control
 
 The controllers are implemented in C++ (`controllers.hpp`) and exposed
 through the binding; guidance geometry lives in `python/vessel_gnc/guidance.py`.
@@ -33,7 +33,7 @@ Design choices:
   reference at `+179 deg` while the vessel sits at `-179 deg` produces a
   `2 deg` error, not `358 deg`.
 - **Derivative on the measurement**: the D term uses the measured yaw rate
-  `r`, not the derivative of the error — no derivative kick on reference
+  `r`, not the derivative of the error. No derivative kick on reference
   steps, no noise amplification through wrapping.
 - **Anti-windup**: the integrator is frozen whenever the output is saturated
   and the error pushes further into saturation (conditional integration), and
@@ -128,13 +128,13 @@ varying state, not a future disturbance trajectory. No truth environment is
 available to the controller.
 
 The model is an independent CasADi implementation of the same equations as
-the C++ core — deliberately duplicated because CasADi needs symbolic
+the C++ core. The duplication is deliberate: CasADi needs symbolic
 expressions. The state is 8-dimensional: the vessel `(x, y, psi, u, v, r)`
 plus the actuator `(T, N)` (docs/model.md §5); the controls are the
 commanded forces. The actuator block is stepped first, then the vessel block
-with the applied forces held at their end-of-step values — the exact
-composition of the C++ reference (`actuator_step` + `rk4_step`) — which
-keeps the cross-validation test bit-tight (max diff < 1e-8 over random
+with the applied forces held at their end-of-step values, which is the exact
+composition of the C++ reference (`actuator_step` + `rk4_step`) and keeps
+the cross-validation test bit-tight (max diff < 1e-8 over random
 states with non-zero inertial current and wind). Kinematics use absolute
 body velocity, while Coriolis/damping use relative water velocity and retain
 the rotating-body current transport term from docs/model.md §3.
@@ -146,12 +146,14 @@ produced exploding predictions; sub-stepping fixed it.
 
 ### Solver settings and initial guesses
 
-IPOPT runs with a relaxed tolerance (`tol = 1e-4` plus acceptable-iteration
-criteria and a 0.4 s wall-time cap): start-up and turn-transient optima are
+IPOPT runs with a relaxed tolerance (`tol = 1e-4` plus the
+acceptable-iteration criteria). Start-up and turn-transient optima are
 flat regions (the vessel cannot catch the reference within the horizon), so
-tight KKT tolerances are meaningless there and made IPOPT's dual iterates
-diverge. The wall-time cap bounds the worst case; the best iterate of a
-capped solve is used.
+a tight KKT tolerance is meaningless there and made IPOPT's dual iterates
+diverge. Termination is iteration- and tolerance-based, with no wall-clock
+cap in the solvers: such a cap made accepted iterates depend on machine
+load, which broke the reproducibility contract below (docs/validation.md
+records the removal).
 
 The NLP graph is expanded once by CasADi (`expand=True`), which removes the
 runtime overhead of nested symbolic functions without changing the equations.
@@ -159,12 +161,12 @@ runtime overhead of nested symbolic functions without changing the equations.
 The initial guess is, in order: the previous solution shifted by one step
 (`warm_start`, the default), the previously applied command rolled out
 through the model, and a drag-balance cruise rollout. The solver falls back
-down the list until one attempt converges (or the wall time is reached).
+down the list until one attempt converges.
 
 ### Numerical reproducibility
 
-IPOPT runs with `tol = 1e-4` (plus the acceptable-iteration criteria and
-the 0.4 s wall-time cap above). Determinism is therefore a
+IPOPT runs with `tol = 1e-4` plus the acceptable-iteration criteria.
+Determinism is therefore a
 *reproducibility contract*, not a promise of bit-identical iterates:
 full-precision IPOPT solutions can legitimately differ in the last ulps
 between runs or environments (threading/BLAS) even when every input is
@@ -173,10 +175,11 @@ the contract in `--verify-determinism`
 (`python tools/generate_reference_results.py`): the LOS baseline metrics
 must reproduce exactly (no iterative solver), while the NMPC and estimator
 metrics must match within `rtol = 1e-6`, `atol = 1e-6`; a violation is
-reported with the worst offending key and its deviation. The wall-time cap
-bounds the worst-case solve duration (the 5 Hz control period is a 200 ms
-budget) and is machine-dependent: solve times live only in
-`results/reference/benchmark.json`, never in the deterministic metrics.
+reported with the worst offending key and its deviation. Solve duration is
+machine-dependent and never enters the deterministic metrics: solve times
+live only in `results/reference/benchmark.json` (the 5 Hz control period
+defines a 200 ms budget, but the repository makes no real-time capability
+claim).
 Reproducibility holds within the software environment recorded in
 `results/reference/metadata.json` (the `software` block); regenerating in
 another environment requires a fresh `--verify-determinism` run there.
@@ -263,8 +266,8 @@ One stage (evaluated at `X[:, k+1]`, `U[:, k]`, `S[k]`), all SI:
 `dU_0 = U_0 - u_prev`, `dU_k = U_k - U_{k-1}` (the first increment anchors
 on the previously applied command); the virtual-speed increment anchors on
 the previously applied virtual speed (or `progress_speed_ref` after reset).
-The reward is attached to the bounded virtual speed only — there is **no**
-`speed_ref * t` position term anywhere, so MPCC imposes no absolute
+The reward is attached to the bounded virtual speed only. There is **no**
+`speed_ref * t` position term anywhere: MPCC imposes no absolute
 mission-clock time-position schedule.
 
 #### Solver settings and conditioning (M5-G remediation)
@@ -273,7 +276,7 @@ Two defaults changed during the benchmark remediation after deterministic
 failed solves appeared in `bench_mpcc` (7/300 samples at the two S-curve
 turns, all `Maximum_WallTime_Exceeded` under the 0.4 s per-attempt cap):
 
-- **`r_vs` default `0.0 -> 0.5` [s²/m²]** — conditioning, not tracking. With
+- **`r_vs` default `0.0 -> 0.5` [s²/m²]**: conditioning, not tracking. With
   `r_vs = 0.0` the virtual-speed Hessian block consists only of the
   rank-deficient `s_vs` increment penalty, so IPOPT's dual infeasibility
   stalls near `1e-2` at the first-turn instances (a genuine
@@ -284,15 +287,16 @@ turns, all `Maximum_WallTime_Exceeded` under the 0.4 s per-attempt cap):
   `mu_strategy = "adaptive"`, next bullet). At cruise `V_s = V_s,ref = 1.3 m/s` the term
   is exactly zero; the progress reward `q_progress = 8.25` still dominates
   the bounded `V_s` choice (slope `-8.25 + 2*r_vs*(V_s - 1.3) < 0` at the
-  `2.0 m/s` upper bound), so the optimum is not qualitatively changed — the
+  `2.0 m/s` upper bound), so the optimum is not qualitatively changed: the
   regularization is a curvature term, not a speed schedule. Values up to
   `0.3` do not fix the stall; `0.5` is the smallest tested (with adaptive
   mu) that does.
-- **IPOPT `mu_strategy = "adaptive"`** — the monotone barrier path needs
-  hundreds of iterations on the turn-2 instances (wall-time-capped at
-  ~120-150), while the adaptive barrier converges them in 10-25 iterations.
-  This is solver tuning only: `tol`, the acceptable-iteration criteria and
-  the 0.4 s wall-time cap are unchanged, and the adaptive strategy
+- **IPOPT `mu_strategy = "adaptive"`**: the monotone barrier path needs
+  hundreds of iterations on the turn-2 instances (it used to die on the
+  per-attempt wall-time cap at ~120-150), while the adaptive barrier
+  converges them in 10-25 iterations.
+  This is solver tuning only: `tol` and the acceptable-iteration criteria
+  are unchanged, and the adaptive strategy
   converges to the same optimum.
 
 The regression is locked by

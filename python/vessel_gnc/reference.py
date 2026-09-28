@@ -7,7 +7,7 @@ entry point that only renders the recorded run; nothing here is duplicated
 there.
 
 Every call to ``run_reference_scenario`` constructs fresh controllers,
-filters, sensor suites, NMPC instances and one MPCC instance — there is no
+filters, sensor suites, NMPC instances and one MPCC instance. There is no
 module-level mutable state, so repeated calls (or two runners interleaved)
 start clean. The four runs use separate RNGs initialized with the same seed,
 so they receive matched sensor-noise realizations. The plant runs the same
@@ -192,8 +192,8 @@ def run_reference_scenario(
 ) -> ReferenceRun:
     """Run the flagship reference scenario with fresh per-run objects.
 
-    Everything that carries state — sensor suites, EKFs, PID/PI controllers,
-    both NMPC instances and the MPCC instance (including warm starts) — is
+    Everything that carries state (sensor suites, EKFs, PID/PI controllers,
+    both NMPC instances and the MPCC instance, warm starts included) is
     constructed inside this call, so consecutive runs never share controller
     or filter state. All four runs use separate RNGs initialized with the same
     seed.

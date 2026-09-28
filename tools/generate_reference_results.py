@@ -15,7 +15,7 @@ Canonical generation runs **single-threaded BLAS**: before any NumPy/CasADi
 import this module pins the OpenBLAS, OMP, MKL and NumExpr thread counts to
 one via ``os.environ.setdefault``. IPOPT factorizations (MUMPS) and NumPy
 reductions are deterministic only when the linear-algebra backends do not
-schedule work across threads — multithreaded BLAS can flip the last-ulp
+schedule work across threads; multithreaded BLAS can flip the last-ulp
 IPOPT iterate path and with it the accepted status of borderline solves,
 breaking the deterministic metric contract. The pinning is a tool-level
 contract for the canonical artifacts and is intentionally *not* applied

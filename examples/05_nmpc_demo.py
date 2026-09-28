@@ -10,15 +10,17 @@ the estimator recording and the deterministic metrics live in
 ``vessel_gnc.reference``; this script is a thin entry point that runs the
 shared runner and renders the recorded run through the shared visualization
 helpers (``plot_reference_trajectories``, ``plot_controller_comparison``,
-``animate_trajectory``) — it keeps no private plotting copies. Writes:
+``animate_trajectory``); it keeps no private plotting copies. Writes:
 
-- ``results/nmpc_trajectory.png`` — trajectories with NMPC horizon snapshots;
-- ``results/controller_comparison.png`` — deterministic cross-track error,
+- ``results/nmpc_trajectory.png``: trajectories with NMPC horizon snapshots;
+- ``results/controller_comparison.png``: deterministic cross-track error,
   controls and a metrics table (no timing: solve times live in
   ``results/reference/benchmark.json`` and the generated benchmark tables);
-- ``results/comparison_metrics.json`` — deterministic controller metrics
+- ``results/comparison_metrics.json``: deterministic controller metrics
   (plan §13, §21);
-- ``assets/hero.gif`` — README hero animation (plan §14).
+- ``results/hero_demo.gif``: a demo hero animation (the committed
+  ``assets/hero.gif`` is owned by the reference pipeline and is never
+  overwritten here).
 """
 
 import json
@@ -108,7 +110,7 @@ def main() -> None:
             output_path=HERO_OUTPUT,
             environment=cfg.environment.sample,
             estimated_environment=estimated_environment,
-            title="Disturbance-aware NMPC — predicted horizon",
+            title="Disturbance-aware NMPC: predicted horizon",
             stride=cfg.render_hero_stride_frames,
             fps=cfg.render_fps,
             wake_duration=cfg.render_hero_wake_duration_s,

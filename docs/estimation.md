@@ -1,4 +1,4 @@
-# State estimation — EKF with asynchronous noisy sensors
+# State estimation: EKF with asynchronous noisy sensors
 
 The filter lives in `python/vessel_gnc/ekf.py`, the sensor models in
 `python/vessel_gnc/sensors.py`. All SI units, angles in radians.
@@ -20,7 +20,7 @@ noisy sensors ──► EKF ──► x_hat ──► LOS guidance + PID/PI ─�
 ```
 
 The filter runs at the control rate (10 Hz in example 04). The controller
-uses the **estimate**, not the true state — the plant's state is never seen
+uses the **estimate**, not the true state; the plant's state is never seen
 directly. The two augmented components are available through
 `current_estimate`; `equivalent_current_estimate` is the explicit alias used
 by the combined-uncertainty flagship.
@@ -43,8 +43,8 @@ Their physical meaning depends on the experiment:
 | Speed log | `u` | 10 Hz | 0.05 m/s |
 | Gyro | `r` | 10 Hz | 0.01 rad/s |
 
-Noise is zero-mean Gaussian, sampled with `np.random.default_rng(seed)` — all
-runs are reproducible. Periods are configurable (`SensorConfig`); `None`
+Noise is zero-mean Gaussian, sampled with `np.random.default_rng(seed)`, so
+all runs are reproducible. Periods are configurable (`SensorConfig`); `None`
 disables a sensor.
 
 Note: the sway velocity `v` has **no direct sensor**; it is observed only
@@ -52,7 +52,7 @@ through the dynamics (position coupling) and the other measurements.
 
 ## 3. Filter equations
 
-**Prediction** — the discrete state transition is the C++ RK4 kernel itself
+For prediction, the discrete state transition is the C++ RK4 kernel itself
 (no duplicated dynamics in Python). The command goes through the nominal
 actuator model first (docs/model.md §5); the resulting applied forces drive
 the vessel prediction, and the filter carries the nominal actuator state as
@@ -73,8 +73,8 @@ the prediction environment is
 current or wind, but its own augmented current-equivalent state enters the
 relative-velocity dynamics. Remaining model error is covered by `Q`.
 
-**Update** — all measurements are linear observations of state components
-(`H` is a selection matrix), updated in Joseph form with explicit
+The update step is linear: all measurements are observations of state
+components (`H` is a selection matrix), applied in Joseph form with explicit
 symmetrization:
 
 ```text
@@ -147,4 +147,4 @@ validation without those confounders.
   converges slowly.
 - Diagonal Q/R only (no cross-correlations); adequate at this noise level.
 - The Jacobian is recomputed by finite differences every step (12 extra RK4
-  evaluations at 10 Hz — negligible cost, robust to model changes).
+  evaluations at 10 Hz, negligible cost).

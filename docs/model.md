@@ -1,4 +1,4 @@
-# Vessel model — 3-DOF horizontal plane
+# Vessel model: 3-DOF horizontal plane
 
 The implementation is numerically verified (unit and convergence tests in
 `tests/`); the parameter values are **illustrative** (order-of-magnitude for a
@@ -76,7 +76,7 @@ m11 = m + X_udot      m22 = m + Y_vdot      m33 = I_z + N_rdot
 ```
 
 **Coriolis/centripetal term** for a diagonal M (skew-symmetric, standard
-3-DOF construction — see Fossen, *Handbook of Marine Craft Hydrodynamics and
+3-DOF construction; see Fossen, *Handbook of Marine Craft Hydrodynamics and
 Motion Control*, 2011, eq. 3.26 ff.):
 
 ```text
@@ -101,29 +101,31 @@ d_v = Y_v v_rel + Y_|v|v |v_rel| v_rel
 d_r = N_r r_rel + N_|r|r |r_rel| r_rel
 ```
 
-**Actuator force**: `tau = [T, 0, N]^T` — ideal surge force and yaw moment,
+**Actuator force**: `tau = [T, 0, N]^T`, ideal surge force and yaw moment
 subject to saturation bounds (see §5).
 
-**Environment force**: `tau_env = R(psi)^T [F_wind_N, F_wind_E]^T` — the wind
-force is defined in the inertial frame and rotated into the body frame.
+**Environment force**: `tau_env = R(psi)^T [F_wind_N, F_wind_E]^T`, with the
+wind force defined in the inertial frame and rotated into the body frame.
 
 ## 4. Environment model
 
 The simulator accepts either a constant `Environment` or a deterministic
 time-varying policy `t -> Environment` (`python/vessel_gnc/environment.py`):
 the default scenario rotates the current slowly (period 80 s) and adds
-Gaussian wind gusts on top of the mean force — exactly reproducible, no RNG
-(portfolio plan Phase D).
+Gaussian wind gusts on top of the mean force. Everything is exactly
+reproducible: there is no RNG anywhere in the environment (portfolio plan
+Phase D).
 
-- **Current** — ambient flow with inertial components `(V_cN, V_cE)`, assumed
-  uniform and irrotational. Damping and Coriolis terms act on the *relative*
-  velocity `nu_rel = nu - R(psi)^T [V_cN, V_cE]^T`; the absolute acceleration
-  also includes the body-frame transport term above. Physical consequences: a
-  vessel at rest in a current is dragged along with it; a vessel moving exactly
-  with a constant inertial current feels no hydrodynamic load, including while
-  its body frame turns. (These cases are validated in `tests/`.)
-- **Wind** — constant force in the inertial frame, applied at the hull centre.
-  Wind-induced yaw moment is neglected in the current model.
+The current is an ambient flow with inertial components `(V_cN, V_cE)`,
+assumed uniform and irrotational. Damping and Coriolis terms act on the
+*relative* velocity `nu_rel = nu - R(psi)^T [V_cN, V_cE]^T`; the absolute
+acceleration also includes the body-frame transport term above. Physical
+consequences: a vessel at rest in a current is dragged along with it; a
+vessel moving exactly with a constant inertial current feels no
+hydrodynamic load, including while its body frame turns. (These cases are
+validated in `tests/`.) Wind is a constant force in the inertial frame,
+applied at the hull centre; wind-induced yaw moment is neglected in the
+current model.
 
 ## 5. Actuator model
 

@@ -50,7 +50,7 @@ def update_generated_markdown(repo_root: Path) -> None:
     bodies between every ``<!-- generated:<marker-id>:start -->`` /
     ``<!-- generated:<marker-id>:end -->`` pair in README.md and the
     documentation files. All displayed numbers are formatted from the JSON
-    artifacts — nothing is hand-entered — so a regeneration cannot drift
+    artifacts (nothing is hand-entered), so a regeneration cannot drift
     from the committed data. Missing, duplicated, malformed or misplaced
     marker pairs are a hard error: the generator never appends a second
     table. Documentation files are left untouched when the reference

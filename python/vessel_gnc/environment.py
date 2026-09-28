@@ -2,7 +2,7 @@
 
 The environment is a reproducible function of time: the current rotates
 slowly (base vector plus a sinusoid) and the wind adds smooth gust bumps on
-top of a mean component. Everything is deterministic — no RNG — so every run
+top of a mean component. Everything is deterministic (no RNG anywhere), so every run
 is exactly reproducible.
 """
 

@@ -54,7 +54,7 @@ def main() -> None:
         result,
         output_path=OUTPUT,
         environment=environment,
-        title=(f"Open-loop trajectory — {DURATION:g} s, T = {THRUST:g} N, N = {YAW_MOMENT:g} N m"),
+        title=(f"Open-loop trajectory ({DURATION:g} s, T = {THRUST:g} N, N = {YAW_MOMENT:g} N m)"),
     )
     print(f"wrote {OUTPUT}")
 
@@ -63,7 +63,7 @@ def main() -> None:
             result,
             output_path=GIF_OUTPUT,
             environment=environment,
-            title=f"Open-loop — T = {THRUST:g} N, N = {YAW_MOMENT:g} N m",
+            title=f"Open-loop (T = {THRUST:g} N, N = {YAW_MOMENT:g} N m)",
         )
         print(f"wrote {GIF_OUTPUT}")
 
