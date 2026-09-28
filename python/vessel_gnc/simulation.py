@@ -23,9 +23,9 @@ class ControlPolicy(Protocol):
 
 
 class EnvironmentPolicy(Protocol):
-    """Time-varying environment, sampled at each integration step."""
+    """Time- and position-varying environment, sampled each integration step."""
 
-    def __call__(self, t: float) -> _core.Environment: ...
+    def __call__(self, t: float, x: float, y: float) -> _core.Environment: ...
 
 
 @dataclass(frozen=True)
@@ -71,8 +71,9 @@ def simulate(
         state0: initial state (default: rest at the origin, heading North).
         control: constant control (zero-order hold) or a policy
             ``(t, state) -> Control`` evaluated at the start of each step.
-        environment: constant environment, or a policy ``t -> Environment``
-            sampled at each integration step (default: calm).
+        environment: constant environment, or a policy
+            ``(t, x, y) -> Environment`` sampled at each integration step at
+            the vessel position (default: calm).
         clamp: clamp the control to the actuator limits before each step.
         control_period: for policies, the evaluation period [s] (default:
             every step). The last command is held in between (sampled control).
@@ -134,7 +135,7 @@ def simulate(
 
     for k in range(n_steps):
         if env_policy is not None:
-            environment = env_policy(t[k])
+            environment = env_policy(t[k], state.x, state.y)
         if is_policy:
             if t[k] >= last_ctrl_t + period - 1e-9:
                 cmd = control(t[k], state)

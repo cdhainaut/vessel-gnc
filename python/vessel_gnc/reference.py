@@ -107,7 +107,9 @@ class ReferenceScenarioConfig:
     nominal_params: _core.ModelParams = field(default_factory=_core.default_params)
     truth_params: _core.ModelParams = field(default_factory=_core.truth_params)
     estimator_transient_s: float = 20.0  # [s] discarded before current-error stats
+    track_tolerance_m: float = 1.0  # [m] operational corridor half-width
     render_fps: int = 12  # hero animation frame rate
+    render_hero_view_width_m: float = 90.0  # [m] chase-camera window width
     # Hero frame period = stride * dt (0.8 s): ~150 frames over the 120 s
     # flagship keep the GIF light and the render fast without visible
     # stepping at the scenario's spatial scale.
@@ -414,7 +416,7 @@ def _run_closed_loop(
             cmd = policy(t, xhat, prev, ekf)
             prev = _core.clamp_control(cmd, params)
             last_policy_t = t
-        env = config.environment.sample(t)
+        env = config.environment.sample(t, state.x, state.y)
         t_rec.append(t)
         state_true.append([state.x, state.y, state.psi, state.u, state.v, state.r])
         state_estimate.append([xhat.x, xhat.y, xhat.psi, xhat.u, xhat.v, xhat.r])

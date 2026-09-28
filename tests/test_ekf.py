@@ -160,6 +160,10 @@ def test_ekf_estimates_time_varying_current_without_confounders():
         wind_mean_east=0.0,
         gust_times=(),
         gust_peak=0.0,
+        # Uniform current: the filter carries a single current-equivalent
+        # vector, so this test measures plain current tracking. The spatial
+        # field case is covered by the flagship estimator metrics.
+        eddy_peak_m_s=0.0,
     )
     path = make_s_curve_path()
     params = _core.default_params()

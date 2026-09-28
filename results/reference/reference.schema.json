@@ -28,7 +28,8 @@
       "additionalProperties": false,
       "required": [
         "id", "components", "description", "revision", "seed",
-        "duration_s", "integration_dt_s", "control_periods", "path",
+        "duration_s", "integration_dt_s", "track_tolerance_m",
+        "control_periods", "path",
         "environment", "sensors", "nmpc", "mpcc", "los",
         "nominal_params", "truth_params", "render"
       ],
@@ -57,6 +58,7 @@
         "seed": { "const": 42 },
         "duration_s": { "const": 120.0 },
         "integration_dt_s": { "const": 0.01 },
+        "track_tolerance_m": { "const": 1.0 },
         "control_periods": {
           "type": "object",
           "additionalProperties": false,
@@ -120,7 +122,8 @@
           "additionalProperties": false,
           "required": [
             "current_base_east_m_s", "current_amplitude_m_s", "current_period_s",
-            "current_phase_rad", "wind_mean_east_N", "gust_times_s",
+            "current_phase_rad", "eddy_north_m", "eddy_east_m", "eddy_radius_m",
+            "eddy_peak_m_s", "wind_mean_east_N", "gust_times_s",
             "gust_peak_N", "gust_width_s"
           ],
           "properties": {
@@ -128,6 +131,10 @@
             "current_amplitude_m_s": { "const": 0.06 },
             "current_period_s": { "const": 80.0 },
             "current_phase_rad": { "const": 0.0 },
+            "eddy_north_m": { "const": 60.0 },
+            "eddy_east_m": { "const": 25.0 },
+            "eddy_radius_m": { "const": 35.0 },
+            "eddy_peak_m_s": { "const": 0.25 },
             "wind_mean_east_N": { "const": 3.0 },
             "gust_times_s": {
               "type": "array",
@@ -225,12 +232,14 @@
           "additionalProperties": false,
           "required": [
             "fps", "hero_stride_frames", "hero_wake_duration_s",
+            "hero_view_width_m",
             "horizon_shot_times_s", "path_render_samples"
           ],
           "properties": {
             "fps": { "const": 12 },
             "hero_stride_frames": { "const": 80 },
             "hero_wake_duration_s": { "const": 12.0 },
+            "hero_view_width_m": { "const": 90.0 },
             "horizon_shot_times_s": {
               "type": "array",
               "minItems": 1,

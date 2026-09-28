@@ -178,11 +178,16 @@ def test_short_run_records_callback_aligned_histories_and_fair_mpcc_inputs(
 
     # Identically seeded, independent filter/sensor runs agree before their
     # controller actions diverge. All runs sample the true environment at the
-    # common estimator cadence.
+    # common estimator cadence. The truth is a spatial field sampled at each
+    # vessel position: the histories are identical while the trajectories
+    # coincide, then differ by at most the field gradient (0.25 m/s over the
+    # 35 m eddy core) times the spread of the four trajectories.
     for controller in controllers[1:]:
-        np.testing.assert_array_equal(
+        np.testing.assert_allclose(
             controller.estimator.current_true,
             run.nmpc.estimator.current_true,
+            atol=5e-3,
+            rtol=0.0,
         )
     predictive_initial_estimates = np.array(
         [controller.estimator.state_estimate[0] for controller in controllers[1:]]

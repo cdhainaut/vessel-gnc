@@ -127,7 +127,7 @@ def plot_reference_trajectories(
         y0 = float(np.interp(shot_t, t, aware_result.y))
         _, handles = environment_arrows(
             ax,
-            run.config.environment.sample(shot_t),
+            run.config.environment.sample(shot_t, x0, y0),
             x0,
             y0,
             annotate=False,
