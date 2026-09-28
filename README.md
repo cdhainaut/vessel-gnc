@@ -41,9 +41,10 @@ current the controller knows nothing about:
 from vessel_gnc import _core, make_s_curve_geometry, simulate, VesselMpcc
 from vessel_gnc.metrics import path_following_metrics
 
-path = make_s_curve_geometry()                     # 200 m S-curve reference
-mpcc = VesselMpcc(_core.default_params(), path)    # geometric contouring MPC
+path = make_s_curve_geometry()  # 200 m S-curve reference
+mpcc = VesselMpcc(_core.default_params(), path)  # geometric contouring MPC
 command, actuator = _core.Control(), _core.ActuatorState()
+
 
 def pilot(t, state):
     """Closes the loop at 5 Hz: actuator lag first, then one MPCC solve."""
@@ -52,8 +53,10 @@ def pilot(t, state):
     command = mpcc.solve(state, actuator, u_prev=command)
     return command
 
-result = simulate(60.0, 0.01, control=pilot, control_period=0.2,
-                  environment=_core.Environment(current_east=0.15))
+
+result = simulate(
+    60.0, 0.01, control=pilot, control_period=0.2, environment=_core.Environment(current_east=0.15)
+)
 
 metrics = path_following_metrics(result, path, lookahead=8.0)
 print(f"RMS cross-track error: {metrics['cross_track_rms_m']:.2f} m")
@@ -80,11 +83,11 @@ on the flagship scenario, is `python examples/05_nmpc_demo.py`.
 <!-- generated:reference-benchmark-v1:start -->
 | Metric | Result |
 |---|---:|
-| C++ RK4 propagation (vessel + actuator) | **494.7 ns/step** |
-| 1000 s simulation (Python loop) | **373 ms** |
-| Nominal NMPC mean / median / p95 / max [ms] | **22.4 / 21.8 / 29.5 / 63.5** |
-| Disturbance-aware NMPC mean / median / p95 / max [ms] | **21.1 / 20.1 / 28.1 / 39.1** |
-| Disturbance-aware MPCC mean / median / p95 / max [ms] | **39.8 / 34.7 / 72.3 / 107.4** |
+| C++ RK4 propagation (vessel + actuator) | **530.5 ns/step** |
+| 1000 s simulation (Python loop) | **393 ms** |
+| Nominal NMPC mean / median / p95 / max [ms] | **20.9 / 19.9 / 27.9 / 36.9** |
+| Disturbance-aware NMPC mean / median / p95 / max [ms] | **20.0 / 19.6 / 24.8 / 30.1** |
+| Disturbance-aware MPCC mean / median / p95 / max [ms] | **32.7 / 30.7 / 42.9 / 107.7** |
 
 Machine-dependent wall-clock measurements recorded in `results/reference/benchmark.json` (`benchmark_v3`, 900 predictive solves, 0 failed). Per-workload status histograms: Nominal NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware NMPC: 300 samples, 0 failed, Solve_Succeeded=300; Disturbance-aware MPCC: 300 samples, 0 failed, Solve_Succeeded=300. The 5 Hz control period defines a 200 ms budget; these solve times make no real-time capability claim. Regenerate with `python tools/generate_reference_results.py`.
 
@@ -136,6 +139,12 @@ actuator use and saturation for all four controllers. Every number is
 formatted from the committed reference artifacts, with no hand-picked values.
 
 ![Controller comparison](assets/controller_comparison.png)
+
+The dynamic-positioning counterpart is `python examples/06_station_keeping.py`:
+the vessel captures a station on the eddy rim from 6 m off and holds a
++/-0.5 m watch circle under gusts, again from EKF estimates only.
+
+![Station-keeping on the eddy rim](assets/station_keeping.gif)
 
 ## Architecture
 
@@ -208,9 +217,9 @@ definitions are documented in `docs/validation.md`.
 | Schema | `results/reference/reference.schema.json` (version 3) |
 | Deterministic metrics | `results/reference/metrics.json` |
 | Machine-dependent benchmark | `results/reference/benchmark.json` |
-| Generated at (UTC) | 2026-09-28T19:10:50+00:00 |
-| Source commit | `afd34c839b2868381d26678ea083fdd7ccef9b72` |
-| Source fingerprint | dirty: true · `b27d6bcb3a6512cd10af41a308458ee4573f1e4a5f21f83b02d99ac6183f653c` |
+| Generated at (UTC) | 2026-09-28T20:06:26+00:00 |
+| Source commit | `6cde605b1c8021598b26250718ec21c56a577264` |
+| Source fingerprint | dirty: true · `eafe133a9a9f450edba219f3b139a4960c200739409162d8e97c7f7499829cbc` |
 
 Provenance rows are generation-time records; the content-based source fingerprint is the authoritative consistency check. The full reproducibility contract and the metric definitions live in the validation documentation.
 

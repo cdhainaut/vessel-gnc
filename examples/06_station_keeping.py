@@ -25,6 +25,7 @@ from vessel_gnc.nmpc import VesselNmpc
 from vessel_gnc.plot_style import apply_style, save_figure
 from vessel_gnc.sensors import SensorConfig, SensorSuite
 from vessel_gnc.simulation import simulate
+from vessel_gnc.visualization import animate_trajectory
 
 # --- Scenario parameters ---------------------------------------------------
 DURATION = 90.0  # [s]
@@ -36,6 +37,7 @@ HEADING_REF = 0.0  # [rad] hold head to wind/current
 WATCH_RADIUS = 0.5  # [m] operational watch circle
 SEED = 7  # reproducible sensor noise
 OUTPUT = Path("results/station_keeping.png")
+GIF_OUTPUT = Path("assets/station_keeping.gif")
 
 SENSORS = SensorConfig()
 SCENARIO = EnvironmentScenario()  # eddy + rotating base current + gusts
@@ -54,6 +56,7 @@ def main() -> None:
     actuator = _core.ActuatorState()
     r_cov = {name: SENSORS.covariance(name) for name in ("gnss", "compass", "speed", "gyro")}
     errors = []
+    estimates = []
 
     def pilot(t: float, state: _core.State) -> _core.Control:
         nonlocal command, actuator
@@ -71,6 +74,8 @@ def main() -> None:
         # Logged against the truth state: the requirement is on the real
         # position, while the controller only ever sees ``ekf.estimate``.
         errors.append((t, np.hypot(state.x - STATION[0], state.y - STATION[1])))
+        estimate = ekf.equivalent_current_estimate
+        estimates.append((t, estimate.current_north, estimate.current_east))
         return command
 
     result = simulate(
@@ -95,6 +100,41 @@ def main() -> None:
     )
 
     _draw(result, error_t, errors, params)
+    _animate(result, estimates)
+
+
+def _animate(result, estimates: list) -> None:
+    """Render the capture-and-hold animation (field, watch circle, estimate)."""
+    estimate_t = np.array([row[0] for row in estimates])
+    estimate_north = np.array([row[1] for row in estimates])
+    estimate_east = np.array([row[2] for row in estimates])
+
+    def estimated_environment(t: float, x: float = 0.0, y: float = 0.0) -> _core.Environment:
+        # Nearest recorded filter estimate (a single current-equivalent
+        # vector for the vehicle, not a field).
+        idx = int(np.searchsorted(estimate_t, t, side="right")) - 1
+        idx = min(max(idx, 0), len(estimate_t) - 1)
+        return _core.Environment(
+            current_north=float(estimate_north[idx]),
+            current_east=float(estimate_east[idx]),
+        )
+
+    def distance_text(t: float, x: float, y: float) -> str:
+        return f"distance to station {np.hypot(x - STATION[0], y - STATION[1]):.2f} m"
+
+    animate_trajectory(
+        result,
+        output_path=GIF_OUTPUT,
+        environment=SCENARIO.sample,
+        estimated_environment=estimated_environment,
+        station_circle=(STATION, WATCH_RADIUS),
+        title="Station-keeping on the eddy rim: capture and hold",
+        stride=80,
+        fps=12,
+        wake_duration=12.0,
+        progress_text=distance_text,
+    )
+    print(f"wrote {GIF_OUTPUT}")
 
 
 def _draw(

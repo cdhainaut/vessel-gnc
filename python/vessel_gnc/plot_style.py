@@ -16,6 +16,7 @@ from pathlib import Path
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from PIL import Image
 
 __all__ = [
     "CONTROLLER_STYLES",
@@ -23,6 +24,7 @@ __all__ = [
     "FIGURE_DPI",
     "SINGLE_SIZE",
     "apply_style",
+    "compress_gif",
     "save_figure",
 ]
 
@@ -68,3 +70,34 @@ def save_figure(fig: plt.Figure, output_path: str | Path) -> None:
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=FIGURE_DPI, bbox_inches="tight")
+
+
+def compress_gif(path: str | Path, colors: int = 96) -> None:
+    """Rewrite a GIF with one shared undithered palette, in place.
+
+    Matplotlib's GIF writer quantizes every frame independently with
+    dithering, which turns smooth field shading into per-frame noise and
+    inflates the file several-fold. Re-quantizing all frames against one
+    palette taken deterministically from the middle frame keeps the same
+    pixels in flat colour bands and compresses far better.
+
+    Args:
+        path: GIF to recompress in place.
+        colors: palette size (default 96).
+    """
+    gif = Image.open(path)
+    frames = []
+    for index in range(gif.n_frames):
+        gif.seek(index)
+        frames.append(gif.convert("RGB"))
+    duration = gif.info.get("duration", 80)
+    palette = frames[len(frames) // 2].convert("P", palette=Image.ADAPTIVE, colors=colors)
+    quantized = [frame.quantize(palette=palette, dither=Image.NONE) for frame in frames]
+    quantized[0].save(
+        path,
+        save_all=True,
+        append_images=quantized[1:],
+        duration=duration,
+        loop=0,
+        optimize=True,
+    )

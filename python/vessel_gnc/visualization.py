@@ -23,6 +23,7 @@ from vessel_gnc import _core
 from vessel_gnc.plot_style import (
     SINGLE_SIZE,
     apply_style,
+    compress_gif,
     save_figure,
 )
 from vessel_gnc.simulation import EnvironmentPolicy, SimulationResult
@@ -234,9 +235,10 @@ def animate_trajectory(
     stride: int = 10,
     fps: int = 10,
     wake_duration: float = 8.0,
-    dpi: int = 90,
+    dpi: int = 72,
     reference_path: np.ndarray | None = None,
     corridor_half_width_m: float | None = None,
+    station_circle: tuple[np.ndarray, float] | None = None,
     follow_view_width_m: float | None = None,
     horizon: list[tuple[float, np.ndarray]] | None = None,
     horizon_label: str = "NMPC prediction",
@@ -276,6 +278,8 @@ def animate_trajectory(
         wake_duration: length of the speed-coloured wake ribbon [s].
         corridor_half_width_m: optional operational track tolerance [m],
             drawn as a corridor band around ``reference_path``.
+        station_circle: optional ``(station, radius_m)`` watch circle for
+            station-keeping scenes, drawn as a translucent disc.
         follow_view_width_m: optional camera window [m]; when set, the view
             follows the vessel with this window width so the corridor, the
             vessel and the disturbance arrows stay readable.
@@ -308,6 +312,12 @@ def animate_trajectory(
         x_hi = max(x_hi, rp[:, 0].max())
         y_lo = min(y_lo, rp[:, 1].min())
         y_hi = max(y_hi, rp[:, 1].max())
+    if station_circle is not None:
+        station, radius = station_circle
+        x_lo = min(x_lo, float(station[0]) - radius)
+        x_hi = max(x_hi, float(station[0]) + radius)
+        y_lo = min(y_lo, float(station[1]) - radius)
+        y_hi = max(y_hi, float(station[1]) + radius)
     if extra_trajectories:
         for _, positions, _color in extra_trajectories:
             pts = np.asarray(positions)
@@ -327,15 +337,16 @@ def animate_trajectory(
     field_north = np.zeros_like(field_xx)
     field_east = np.zeros_like(field_xx)
     field_speed = np.zeros_like(field_xx)
-    field_map = ax.pcolormesh(
+    # Banded filled contours rather than a smooth gradient: they read as a
+    # technical map, and flat colour regions keep the GIF palette small.
+    field_levels = np.linspace(0.0, 0.3, 7)
+    field_contours = ax.contourf(
         field_xx,
         field_yy,
         field_speed,
+        levels=field_levels,
         cmap="Blues",
-        alpha=0.55,
-        shading="gouraud",
-        vmin=0.0,
-        vmax=0.3,
+        alpha=0.5,
         zorder=0,
     )
     field_arrows = ax.quiver(
@@ -353,6 +364,24 @@ def animate_trajectory(
 
     # Static elements.
     legend_entries = []
+    if station_circle is not None:
+        station, radius = station_circle
+        ax.add_patch(
+            plt.Circle(
+                (float(station[0]), float(station[1])),
+                radius,
+                facecolor="tab:red",
+                alpha=0.15,
+                zorder=0,
+            )
+        )
+        ax.plot(station[0], station[1], "+", color="tab:red", ms=12, mew=2)
+        legend_entries.append(
+            (
+                plt.Rectangle((0, 0), 1, 1, facecolor="tab:red", alpha=0.25),
+                f"watch circle +/-{radius:g} m",
+            )
+        )
     if reference_path is not None:
         if corridor_half_width_m is not None:
             # Operational track tolerance: the corridor the mission has to
@@ -485,7 +514,7 @@ def animate_trajectory(
     view_height_over_width = (box.height * fig.get_figheight()) / (box.width * fig.get_figwidth())
 
     def update(frame: int) -> tuple:
-        nonlocal env_artists
+        nonlocal env_artists, field_contours
         i = int(indices[frame])
         if follow_view_width_m is not None:
             # Chase camera: world-fixed field and paths, vessel-centred view.
@@ -508,14 +537,23 @@ def animate_trajectory(
                     annotate=False,
                 )
                 env_artists += frame_artists
-                # Field map at this instant: speed shading plus vectors.
+                # Field map at this instant: banded speed contours plus vectors.
                 for row in range(field_xx.shape[0]):
                     for col in range(field_xx.shape[1]):
                         cell = environment(t_now, field_xx[row, col], field_yy[row, col])
                         field_north[row, col] = cell.current_north
                         field_east[row, col] = cell.current_east
                 field_speed[:] = np.hypot(field_north, field_east)
-                field_map.set_array(field_speed.ravel())
+                field_contours.remove()
+                field_contours = ax.contourf(
+                    field_xx,
+                    field_yy,
+                    field_speed,
+                    levels=field_levels,
+                    cmap="Blues",
+                    alpha=0.5,
+                    zorder=0,
+                )
                 field_arrows.set_UVC(field_north, field_east)
             if callable(estimated_environment):
                 frame_artists, _ = environment_arrows(
@@ -585,4 +623,5 @@ def animate_trajectory(
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
         anim.save(out, writer=animation.PillowWriter(fps=fps), dpi=dpi)
+        compress_gif(out, colors=80)
     return anim
